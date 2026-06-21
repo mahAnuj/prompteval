@@ -1,0 +1,91 @@
+[project]
+name = "prompteval"
+version = "0.1.0"
+description = "LLM eval framework with first-class token-cost tracking. Did your prompt change save money without losing quality?"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Anuj Mahajan", email = "mahajananuj07@gmail.com" }]
+requires-python = ">=3.12"
+keywords = [
+    "llm",
+    "evaluation",
+    "evals",
+    "prompt-engineering",
+    "claude",
+    "anthropic",
+    "openai",
+    "cost-tracking",
+    "token-cost",
+    "ai-quality",
+    "regression-detection",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "anthropic>=0.69.0",
+    "click>=8.1.7",
+    "pydantic>=2.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mahAnuj/prompteval"
+Repository = "https://github.com/mahAnuj/prompteval"
+Issues = "https://github.com/mahAnuj/prompteval/issues"
+
+[project.scripts]
+prompteval = "prompteval.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.9",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+# ---------- ruff ----------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Start strict; prune later only if a rule is more noise than value.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort (import order)
+    "B",   # bugbear (likely bugs)
+    "UP",  # pyupgrade (modern syntax)
+    "SIM", # simplify
+    "RUF", # ruff-specific
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["S101"] # `assert` is fine in tests
+
+# ---------- mypy ----------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+pretty = true
+show_error_codes = true
+
+# ---------- pytest ----------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+asyncio_mode = "auto"
