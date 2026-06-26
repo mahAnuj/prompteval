@@ -1,7 +1,7 @@
 """Click-based CLI for prompteval.
 
-Surface today: `--version`, `hello`, `init`, `models`, `scorer`, `run`.
-`compare` lands in Week 5 — see IMPLEMENTATION_PLAN.md.
+Surface today: `--version`, `hello`, `init`, `models`, `scorer`, `run`,
+`compare`. HTML report + `--fail-on` for CI land in Week 6.
 """
 
 from __future__ import annotations
@@ -15,8 +15,9 @@ from pathlib import Path
 
 import click
 
+from prompteval.compare import compute_comparison, render_text
 from prompteval.cost import UnknownModelError, get_pricing, list_models
-from prompteval.eval import Eval, run_eval, save_run
+from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
@@ -286,6 +287,37 @@ def _count_examples(dataset_path: Path) -> int:
         for line in dataset_path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     )
+
+
+@main.command()
+@click.argument("tag_a")
+@click.argument("tag_b")
+@click.option(
+    "--runs-dir",
+    "runs_dir",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Where the run JSON files live (default: .prompteval/runs).",
+)
+def compare(tag_a: str, tag_b: str, runs_dir: Path | None) -> None:
+    """Compare two persisted runs and print the paired delta report.
+
+    Both tags must have been produced by a prior `prompteval run --tag <name>`.
+    The report shows per-scorer + cost + latency deltas with 95% bootstrap CIs
+    and paired t-test p-values, plus a plain-English recommendation.
+    """
+    try:
+        run_a = load_run(tag_a, runs_dir=runs_dir)
+        run_b = load_run(tag_b, runs_dir=runs_dir)
+    except FileNotFoundError as err:
+        raise click.ClickException(str(err)) from err
+
+    try:
+        report = compute_comparison(run_a, run_b)
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+
+    click.echo(render_text(report))
 
 
 if __name__ == "__main__":

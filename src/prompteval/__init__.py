@@ -18,6 +18,12 @@ Public API as of Week 3:
   record cost+latency, persist run.
 """
 
+from prompteval.compare import (
+    ComparisonReport,
+    MetricDelta,
+    compute_comparison,
+    render_text,
+)
 from prompteval.cost import (
     CostBreakdown,
     ModelPricing,
@@ -43,22 +49,26 @@ from prompteval.eval import (
 from prompteval.version import __version__
 
 __all__ = [
+    "ComparisonReport",
     "CostBreakdown",
     "Eval",
     "Example",
     "ExampleResult",
     "LLMJudgeError",
+    "MetricDelta",
     "ModelPricing",
     "RunResult",
     "ScorerResult",
     "UnknownModelError",
     "Usage",
     "__version__",
+    "compute_comparison",
     "compute_cost",
     "get_pricing",
     "list_models",
     "llm_judge",
     "load_run",
+    "render_text",
     "run_eval",
     "save_run",
     "scorer",
