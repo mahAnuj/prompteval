@@ -40,10 +40,10 @@ Legend:
 | 0 | This implementation plan | ✅ | 2026-06-26 |
 | 1 | `prompteval init` CLI — bootstraps `evals/` folder from templates | ⏳ | |
 | 1 | Templates folder (`prompts/v1.txt`, `prompts/v2.txt`, `dataset.jsonl`, `eval.py`, `.env.example`) | ⏳ | |
-| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cache-hit pricing (Anthropic first) | 📋 | |
+| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | 📋 | |
 | 2 | `prompteval models` CLI — list supported models + per-token pricing | 📋 | |
 | 3 | `@scorer` decorator + return-shape contract | 📋 | |
-| 3 | `llm_judge()` helper (Anthropic SDK, Sonnet by default) | 📋 | |
+| 3 | `llm_judge()` helper (OpenAI SDK, `gpt-4o-mini` by default) | 📋 | |
 | 3 | 6–8 stock scorer templates (`exact_match`, `regex`, `contains`, `json_schema_valid`, `llm_judge_factuality`, `llm_judge_tone`, `length_between`, `not_empty`) | 📋 | |
 | 3 | `prompteval scorer list` + `prompteval scorer copy <name>` CLI | 📋 | |
 | 3–4 | `Eval` class + runner — load dataset, iterate, call LLM, run scorers, record usage + latency, persist run JSON to `.prompteval/runs/` | 📋 | |
@@ -71,7 +71,7 @@ These are valid feature requests we'll **decline** for v1 to keep scope honest:
 |---|---|
 | Web UI / dashboard server | Static HTML report covers v1 reporting need. Server = ops + auth + state. ❄️ v1.x |
 | Multi-user / auth / cloud | Single-developer tool by design for v1. ❄️ never |
-| OpenAI cost model | Anthropic only for v1 to bound scope. ❄️ v0.2 |
+| Anthropic cost model | OpenAI only for v1 to bound scope (see decisions log 2026-06-26). ❄️ v0.2 |
 | Tracing / observability | Phoenix and Langfuse already own this lane. Integrate, don't compete. ❄️ v0.2 |
 | Runtime proxy / caching | Helicone / Portkey / LiteLLM exist. Different category. ❄️ never |
 | AI assistant that writes scorers from a use-case description | Genuinely great idea, but a 3–4 week sub-project. Templates cover 80% of the pain for 5% of the effort. ❄️ v0.3 |
@@ -85,8 +85,8 @@ These are valid feature requests we'll **decline** for v1 to keep scope honest:
 | Version | Theme | Status |
 |---|---|---|
 | v0.2 | Phoenix OTel integration — ingest existing traces, add cost-comparison layer on top | ❄️ planned post-v1 |
-| v0.2 | OpenAI cost model + tokenizer | ❄️ planned post-v1 |
-| v0.2 | **Multi-provider model registry** — Anthropic + OpenAI + OpenAI-compatible endpoints (Ollama, vLLM, Together, Groq, Fireworks). Unlocks one-command **frontier-vs-open-source comparison** (e.g. `Sonnet vs Llama-3.3-70B on your task`). Note: v1 already supports this via two manual runs + `compare`; v0.2 makes it ergonomic and ships a launch post — *"Is Llama 3.3 actually cheaper than Sonnet for [your task]? Here's how to know in 10 minutes."* | ❄️ planned post-v1 |
+| v0.2 | Anthropic cost model + tokenizer | ❄️ planned post-v1 |
+| v0.2 | **Multi-provider model registry** — OpenAI + Anthropic + OpenAI-compatible endpoints (Ollama, vLLM, Together, Groq, Fireworks). Unlocks one-command **frontier-vs-open-source comparison** (e.g. `GPT-4o vs Llama-3.3-70B on your task`). Note: v1 already supports this via two manual runs + `compare`; v0.2 makes it ergonomic and ships a launch post — *"Is Llama 3.3 actually cheaper than GPT-4o for [your task]? Here's how to know in 10 minutes."* | ❄️ planned post-v1 |
 | v0.3 | `prompteval scorer init` — interactive AI assistant generates scorers from use-case description | ❄️ planned post-v1, train on v0.1 user feedback |
 | v1.1 | Compare >2 prompts in a single report (multi-way) | ❄️ later |
 | v1.x | Web dashboard (local-only, not a daemon) | ❄️ later |
@@ -142,6 +142,7 @@ Decisions made + the rationale, in commit order. Append; don't rewrite.
 | 2026-06-21 | mypy `--strict` from day 1 | Catches bugs runtime won't. Cheap insurance. |
 | 2026-06-21 | MIT license | Convention in Python OSS world; less friction than ISC for downstream users. |
 | 2026-06-26 | Anthropic-only cost model for v1 | OpenAI added in v0.2. Scope discipline > universal day-1 support. |
+| 2026-06-26 | **REVISED: OpenAI-only for v1, Anthropic moves to v0.2** | Original decision assumed founder had Anthropic API access (because they use Claude Code). Wrong assumption — Claude Code subscription ≠ API access. Founder has an existing OpenAI account. Switching saves a net-new vendor signup, doesn't compromise the wedge (cost-vs-quality demonstrable on OpenAI just as well), and actually *improves* the v0.2 multi-provider launch post (GPT-4o is more mainstream-recognizable than Sonnet for a "vs Llama 3.3" headline). Meta-lesson: validate provider access before locking. |
 | 2026-06-26 | Cost is a **comparison axis**, not a tracked metric | Verified gap across Braintrust, Langfuse, promptfoo, Phoenix, Inspect AI. The wedge. |
 | 2026-06-26 | Phoenix is a future **integration target**, not a competitor | They have rich per-trace cost (OTel-LLM convention) but no comparison-axis use. v0.2 ingests their traces. |
 | 2026-06-26 | "AI assistant writes scorers" deferred to v0.3 | Genuinely great idea. Scope creep risk in v1. Templates ship in v0.1 for 80% of the pain. |

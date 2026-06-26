@@ -11,9 +11,8 @@ keywords = [
     "evaluation",
     "evals",
     "prompt-engineering",
-    "claude",
-    "anthropic",
     "openai",
+    "gpt-4",
     "cost-tracking",
     "token-cost",
     "ai-quality",
@@ -30,7 +29,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
-    "anthropic>=0.69.0",
+    "openai>=1.50.0",
     "click>=8.1.7",
     "pydantic>=2.9.0",
 ]

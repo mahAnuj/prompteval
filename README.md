@@ -12,7 +12,7 @@ prompteval is **pytest for LLM prompts**. You define a small golden test set and
 mentions_required_terms   0.84        0.79        −0.05    [−0.13, +0.03]  0.21
 professional_tone         0.81        0.83        +0.02    [−0.05, +0.09]  0.58
 ─────────────────────────────────────────────────────────────────────────────
-total cost                $0.0421     $0.0264     −37%     [−42%, −32%]   <0.001
+total cost                $0.158      $0.099      −37%     [−42%, −32%]   <0.001
 avg latency               1.4s        1.1s        −21%     [−28%, −14%]   <0.001
 
 Quality verdict:  no significant regression
@@ -68,7 +68,7 @@ evals/
 │   └── v2.txt              # paste the variant you want to test
 ├── dataset.jsonl           # one example pre-filled
 ├── eval.py                 # pre-filled with 3 scorer examples
-└── .env.example            # ANTHROPIC_API_KEY=...
+└── .env.example            # OPENAI_API_KEY=...
 ```
 
 ### 3. Bring your prompts + a few examples
@@ -123,14 +123,14 @@ prompteval run --prompt prompts/v1.txt --tag baseline
 ```
 
 ```
-Running 20 examples × 1 prompt against claude-sonnet-4-6...
+Running 20 examples × 1 prompt against gpt-4o...
   refund-1   ✓ mentions_required_terms=1.00  professional_tone=0.85
   refund-2   ✓ mentions_required_terms=0.50  professional_tone=0.90
   ...
 === baseline ===
 mentions_required_terms:  0.84 (n=20)
 professional_tone:         0.81 (n=20)
-total cost:                $0.0421  (avg $0.0021/call)
+total cost:                $0.158  (avg $0.0079/call)
 avg latency:               1.4s
 saved to: .prompteval/runs/baseline-2026-06-26T1240.json
 ```
