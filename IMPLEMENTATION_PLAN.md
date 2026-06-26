@@ -40,8 +40,8 @@ Legend:
 | 0 | This implementation plan | ✅ | 2026-06-26 |
 | 1 | `prompteval init` CLI — bootstraps `evals/` folder from templates | ✅ | 2026-06-26 — silent + opinionated; `--dir` / `--force` flags; 13 tests |
 | 1 | Templates folder (`prompts/v1.txt`, `prompts/v2.txt`, `dataset.jsonl`, `eval.py`, `.env.example`) | ✅ | 2026-06-26 — support-assistant persona matches README; gpt-4o-mini default |
-| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | ⏳ | |
-| 2 | `prompteval models` CLI — list supported models + per-token pricing | 📋 | |
+| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | ✅ | 2026-06-26 — `cost/{models,compute}.py`; pricing in YAML; 33 tests |
+| 2 | `prompteval models` CLI — list supported models + per-token pricing | ✅ | 2026-06-26 — `models list [--json]`, `models price <model> [--json]` |
 | 3 | `@scorer` decorator + return-shape contract | 📋 | |
 | 3 | `llm_judge()` helper (OpenAI SDK, `gpt-4o-mini` by default) | 📋 | |
 | 3 | 6–8 stock scorer templates (`exact_match`, `regex`, `contains`, `json_schema_valid`, `llm_judge_factuality`, `llm_judge_tone`, `length_between`, `not_empty`) | 📋 | |
@@ -147,6 +147,8 @@ Decisions made + the rationale, in commit order. Append; don't rewrite.
 | 2026-06-26 | Templates live in `prompteval.init.templates` package, read via `importlib.resources` | Standard Python idiom. Works from wheel + source + zipped installs without `__file__` hacks. `__pycache__` gets ignored in `_walk` (caught by smoke test, not theory). |
 | 2026-06-26 | One source→target rename: `env.example` → `.env.example` | Dotfiles can be excluded by some packaging tools; storing the source un-dotted keeps the package contents predictable. |
 | 2026-06-26 | `templates/` excluded from ruff + mypy | Templates reference v0.1 public API that doesn't exist yet (Week 3-4 work). Treated as data files, not code. Linters off, contents preserved verbatim. |
+| 2026-06-26 | Pricing data in YAML (`src/prompteval/cost/pricing.yaml`), not Python | First instinct was Python (type-checked, no deps). User pushback: YAML is easier for non-coders / future contributors to read + edit, separates data from code. Refactored. pyyaml is a 100KB well-maintained dep, validation runs at import time so a bad YAML fails the test suite, not user code. Lesson: bias toward the schema that minimises friction for the *next* change, not the convenience of the *current* author. |
+| 2026-06-26 | Pricing schema stays OpenAI-shaped in v0.1, polymorphic refactor deferred to v0.2 | The right long-term design is per-provider pricing classes (`OpenAIPricing`, `AnthropicPricing`, `SimplePricing`) with `compute_cost` dispatching on `pricing.provider`. Building that abstraction today, without ever having implemented Anthropic, risks the wrong abstraction. We add the `provider: str` field as the dispatch seam (every YAML entry must declare it), document the refactor plan in both `models.py` and `compute.py` module docstrings, and ship one provider correctly. v0.2 introduces the polymorphic shape with Anthropic as the second-provider ground truth. "Design for one, ship for one, refactor for two." |
 | 2026-06-26 | Cost is a **comparison axis**, not a tracked metric | Verified gap across Braintrust, Langfuse, promptfoo, Phoenix, Inspect AI. The wedge. |
 | 2026-06-26 | Phoenix is a future **integration target**, not a competitor | They have rich per-trace cost (OTel-LLM convention) but no comparison-axis use. v0.2 ingests their traces. |
 | 2026-06-26 | "AI assistant writes scorers" deferred to v0.3 | Genuinely great idea. Scope creep risk in v1. Templates ship in v0.1 for 80% of the pain. |

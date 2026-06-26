@@ -1,0 +1,69 @@
+# Pricing data for the LLM models prompteval can compute cost for.
+#
+# All rates are USD per 1 million tokens.
+#
+# Snapshot date: 2026-06-26. Verify against
+# https://platform.openai.com/docs/pricing before quoting externally.
+#
+# To add a model:
+#   1. Append a new entry under `models` with the same six fields.
+#   2. Set `pricing_updated_at` to today's date (ISO 8601).
+#   3. Run `uv run pytest tests/test_cost_models.py` to validate the shape.
+#
+# Schema reminder:
+#   name                — exact model id (string). Must be unique.
+#   provider            — "openai" only in v0.1. v0.2 adds "anthropic" and
+#                         "openai-compatible" (Groq, Together, Fireworks, Ollama).
+#   input_per_1m        — uncached input price (float, USD per 1M tokens).
+#   cached_input_per_1m — input price for cached portion (float).
+#                         OpenAI: 50% off for gpt-4o family, 75% off for gpt-4.1 family.
+#   output_per_1m       — output price (float). For reasoning models, includes
+#                         reasoning tokens (they're billed at output rate).
+#   pricing_updated_at  — ISO date string for "last verified."
+#   notes               — optional one-line caveat (string or omit).
+#
+# v0.2 will need to extend this schema for Anthropic (cache write 5m / 1h /
+# cache read are three separate rates) and open-source providers (no cache
+# at all). The planned shape is a nested `pricing:` block whose contents vary
+# per provider — see cost/models.py module docstring for the polymorphic design.
+
+models:
+  - name: gpt-4o
+    provider: openai
+    input_per_1m: 2.50
+    cached_input_per_1m: 1.25
+    output_per_1m: 10.00
+    pricing_updated_at: "2026-06-26"
+    notes: Flagship multimodal. 50% cached-input discount.
+
+  - name: gpt-4o-mini
+    provider: openai
+    input_per_1m: 0.15
+    cached_input_per_1m: 0.075
+    output_per_1m: 0.60
+    pricing_updated_at: "2026-06-26"
+    notes: prompteval v0.1 default. 50% cached-input discount. ~$0.005 per full demo run.
+
+  - name: gpt-4.1
+    provider: openai
+    input_per_1m: 2.00
+    cached_input_per_1m: 0.50
+    output_per_1m: 8.00
+    pricing_updated_at: "2026-06-26"
+    notes: 75% cached-input discount — more aggressive than gpt-4o.
+
+  - name: gpt-4.1-mini
+    provider: openai
+    input_per_1m: 0.40
+    cached_input_per_1m: 0.10
+    output_per_1m: 1.60
+    pricing_updated_at: "2026-06-26"
+    notes: 75% cached-input discount.
+
+  - name: gpt-4.1-nano
+    provider: openai
+    input_per_1m: 0.10
+    cached_input_per_1m: 0.025
+    output_per_1m: 0.40
+    pricing_updated_at: "2026-06-26"
+    notes: Cheapest in the OpenAI catalog. 75% cached-input discount.
