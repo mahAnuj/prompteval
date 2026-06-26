@@ -86,6 +86,7 @@ These are valid feature requests we'll **decline** for v1 to keep scope honest:
 |---|---|---|
 | v0.2 | Phoenix OTel integration — ingest existing traces, add cost-comparison layer on top | ❄️ planned post-v1 |
 | v0.2 | OpenAI cost model + tokenizer | ❄️ planned post-v1 |
+| v0.2 | **Multi-provider model registry** — Anthropic + OpenAI + OpenAI-compatible endpoints (Ollama, vLLM, Together, Groq, Fireworks). Unlocks one-command **frontier-vs-open-source comparison** (e.g. `Sonnet vs Llama-3.3-70B on your task`). Note: v1 already supports this via two manual runs + `compare`; v0.2 makes it ergonomic and ships a launch post — *"Is Llama 3.3 actually cheaper than Sonnet for [your task]? Here's how to know in 10 minutes."* | ❄️ planned post-v1 |
 | v0.3 | `prompteval scorer init` — interactive AI assistant generates scorers from use-case description | ❄️ planned post-v1, train on v0.1 user feedback |
 | v1.1 | Compare >2 prompts in a single report (multi-way) | ❄️ later |
 | v1.x | Web dashboard (local-only, not a daemon) | ❄️ later |
