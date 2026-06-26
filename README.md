@@ -151,13 +151,21 @@ You get the report shown at the top of this README — paired quality and cost d
 
 ### 8. (Optional but the moat) Lock it into CI
 
+A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml). The core of it:
+
 ```yaml
-# .github/workflows/prompt-quality.yml
-- run: prompteval run --prompt prompts/current.txt --tag pr-${{ github.sha }}
-- run: prompteval compare main pr-${{ github.sha }} --fail-on cost+15%,quality-5%
+- run: prompteval run --prompt /tmp/baseline.txt --tag baseline
+- run: prompteval run --prompt evals/prompts/v1.txt --tag candidate
+- run: prompteval compare baseline candidate --html report.html --fail-on cost+10%,quality-5%
 ```
 
-Any future prompt change gets gated. PR fails if cost regresses >15% or quality drops >5%, with the comparison report inline as a check.
+Any future prompt change gets gated. PR fails if cost regresses >10% or any
+scorer drops >5 percentage points (only statistically significant breaches
+trip the gate). The `--html` report is uploaded as a build artifact and
+linked from the PR's Checks tab.
+
+See [`examples/github-actions/README.md`](examples/github-actions/README.md)
+for setup steps, required secrets, and how to tune the gate.
 
 ---
 

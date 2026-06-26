@@ -95,6 +95,79 @@ def test_compare_help_describes_command() -> None:
     assert "TAG_A" in result.output
     assert "TAG_B" in result.output
     assert "--runs-dir" in result.output
+    assert "--html" in result.output
+    assert "--fail-on" in result.output
+
+
+def test_compare_writes_html_when_html_flag_given(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    save_run(_build_run("baseline", n=20, score=0.9, cost_per_example=0.02), runs_dir=runs_dir)
+    save_run(_build_run("cheap", n=20, score=0.9, cost_per_example=0.01), runs_dir=runs_dir)
+    html_out = tmp_path / "report.html"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "compare",
+            "baseline",
+            "cheap",
+            "--runs-dir",
+            str(runs_dir),
+            "--html",
+            str(html_out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert html_out.exists()
+    body = html_out.read_text()
+    assert body.startswith("<!doctype html>")
+    assert "baseline" in body and "cheap" in body
+    assert f"HTML report: {html_out}" in result.output
+
+
+def test_compare_fail_on_passes_when_no_breach(tmp_path: Path) -> None:
+    """Cost cut + quality holds → both gates pass → exit 0."""
+    runs_dir = tmp_path / "runs"
+    save_run(_build_run("a", n=30, score=0.9, cost_per_example=0.02), runs_dir=runs_dir)
+    save_run(_build_run("b", n=30, score=0.9, cost_per_example=0.01), runs_dir=runs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["compare", "a", "b", "--runs-dir", str(runs_dir), "--fail-on", "cost+10%,quality-5%"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "GATE FAILED" not in result.output
+
+
+def test_compare_fail_on_exits_1_when_cost_breach(tmp_path: Path) -> None:
+    """Cost jumps 50% with cost+10% gate → exit 1 + GATE FAILED message."""
+    runs_dir = tmp_path / "runs"
+    save_run(_build_run("a", n=30, score=0.9, cost_per_example=0.01), runs_dir=runs_dir)
+    save_run(_build_run("b", n=30, score=0.9, cost_per_example=0.015), runs_dir=runs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main, ["compare", "a", "b", "--runs-dir", str(runs_dir), "--fail-on", "cost+10%"]
+    )
+    assert result.exit_code == 1
+    assert "GATE FAILED" in result.output
+    assert "cost regressed" in result.output
+
+
+def test_compare_fail_on_invalid_spec_fails_fast(tmp_path: Path) -> None:
+    """Malformed gate spec → ClickException, not stack trace."""
+    runs_dir = tmp_path / "runs"
+    save_run(_build_run("a", n=5, score=0.9, cost_per_example=0.01), runs_dir=runs_dir)
+    save_run(_build_run("b", n=5, score=0.9, cost_per_example=0.01), runs_dir=runs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main, ["compare", "a", "b", "--runs-dir", str(runs_dir), "--fail-on", "speed-10%"]
+    )
+    assert result.exit_code != 0
+    assert "Invalid --fail-on clause" in result.output
 
 
 def test_compare_uses_default_runs_dir_when_not_specified(

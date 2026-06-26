@@ -20,8 +20,14 @@ Public API as of Week 3:
 
 from prompteval.compare import (
     ComparisonReport,
+    GateBreach,
+    GateClause,
+    GateSpecError,
     MetricDelta,
     compute_comparison,
+    evaluate_gates,
+    parse_gate_spec,
+    render_html,
     render_text,
 )
 from prompteval.cost import (
@@ -54,6 +60,9 @@ __all__ = [
     "Eval",
     "Example",
     "ExampleResult",
+    "GateBreach",
+    "GateClause",
+    "GateSpecError",
     "LLMJudgeError",
     "MetricDelta",
     "ModelPricing",
@@ -64,10 +73,13 @@ __all__ = [
     "__version__",
     "compute_comparison",
     "compute_cost",
+    "evaluate_gates",
     "get_pricing",
     "list_models",
     "llm_judge",
     "load_run",
+    "parse_gate_spec",
+    "render_html",
     "render_text",
     "run_eval",
     "save_run",

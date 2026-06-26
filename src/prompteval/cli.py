@@ -15,7 +15,14 @@ from pathlib import Path
 
 import click
 
-from prompteval.compare import compute_comparison, render_text
+from prompteval.compare import (
+    compute_comparison,
+    evaluate_gates,
+    parse_gate_spec,
+    render_html,
+    render_text,
+)
+from prompteval.compare.gates import GateSpecError
 from prompteval.cost import UnknownModelError, get_pricing, list_models
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
@@ -299,12 +306,37 @@ def _count_examples(dataset_path: Path) -> int:
     type=click.Path(file_okay=False, path_type=Path),
     help="Where the run JSON files live (default: .prompteval/runs).",
 )
-def compare(tag_a: str, tag_b: str, runs_dir: Path | None) -> None:
+@click.option(
+    "--html",
+    "html_path",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write a single-file HTML report to this path.",
+)
+@click.option(
+    "--fail-on",
+    "fail_on",
+    default=None,
+    help=(
+        "CI gate spec, e.g. 'cost+10%,quality-5%'. Exits 1 if any significant "
+        "breach is detected. Only counts statistically significant changes."
+    ),
+)
+def compare(
+    tag_a: str,
+    tag_b: str,
+    runs_dir: Path | None,
+    html_path: Path | None,
+    fail_on: str | None,
+) -> None:
     """Compare two persisted runs and print the paired delta report.
 
     Both tags must have been produced by a prior `prompteval run --tag <name>`.
     The report shows per-scorer + cost + latency deltas with 95% bootstrap CIs
     and paired t-test p-values, plus a plain-English recommendation.
+
+    Use --html PATH to also write a shareable single-file HTML report.
+    Use --fail-on to gate CI on significant regressions (exits 1 on breach).
     """
     try:
         run_a = load_run(tag_a, runs_dir=runs_dir)
@@ -312,12 +344,34 @@ def compare(tag_a: str, tag_b: str, runs_dir: Path | None) -> None:
     except FileNotFoundError as err:
         raise click.ClickException(str(err)) from err
 
+    # Parse the gate spec up-front so a typo fails immediately, not after the run.
+    clauses = None
+    if fail_on is not None:
+        try:
+            clauses = parse_gate_spec(fail_on)
+        except GateSpecError as err:
+            raise click.ClickException(str(err)) from err
+
     try:
         report = compute_comparison(run_a, run_b)
     except ValueError as err:
         raise click.ClickException(str(err)) from err
 
     click.echo(render_text(report))
+
+    if html_path is not None:
+        html_path.write_text(render_html(report), encoding="utf-8")
+        click.echo("")
+        click.echo(f"HTML report: {html_path}")
+
+    if clauses is not None:
+        breaches = evaluate_gates(report, clauses)
+        if breaches:
+            click.echo("")
+            click.echo("GATE FAILED:")
+            for b in breaches:
+                click.echo(f"  - {b.detail}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,69 @@
+# Example GitHub Actions workflow for prompteval.
+#
+# Copy this file to `.github/workflows/prompteval.yml` in your repo, then:
+#   1. Add `OPENAI_API_KEY` to your repo Secrets (Settings → Secrets and variables → Actions).
+#   2. Tune the `--fail-on` thresholds to your tolerance — defaults below are
+#      reasonable for a low-stakes eval; tighten them for production prompts.
+#   3. Edit the prompt paths + tags to match your `evals/` layout.
+#
+# What this does on every PR:
+#   - Sets up Python + installs prompteval from PyPI
+#   - Runs your eval against the BASELINE prompt (whatever's on `main`) and the
+#     CANDIDATE prompt (the PR's version)
+#   - Computes the paired delta report
+#   - Uploads the HTML report as a build artifact (downloadable from the PR's
+#     "Checks" tab)
+#   - Fails the build if cost regresses >10% OR any scorer drops >5%
+
+name: prompteval
+
+on:
+  pull_request:
+    paths:
+      - "evals/**"
+      - ".github/workflows/prompteval.yml"
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          # Need full history so we can also check out main's prompt
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install prompteval
+        run: pip install prompteval
+
+      - name: Run baseline (prompt from main)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          git show origin/main:evals/prompts/v1.txt > /tmp/baseline.txt
+          prompteval run --prompt /tmp/baseline.txt --tag baseline
+
+      - name: Run candidate (prompt from PR)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: prompteval run --prompt evals/prompts/v1.txt --tag candidate
+
+      - name: Compare and gate
+        run: |
+          prompteval compare baseline candidate \
+            --html report.html \
+            --fail-on cost+10%,quality-5%
+
+      - name: Upload HTML report
+        if: always()  # upload even on gate failure — that's when you most want it
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompteval-report
+          path: report.html
+          retention-days: 14
