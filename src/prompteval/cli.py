@@ -1,19 +1,22 @@
 """Click-based CLI for prompteval.
 
-Surface today: `--version`, `hello`, `init`, `models`, `scorer`. Run + compare
-land in Week 4-5 — see IMPLEMENTATION_PLAN.md for the schedule.
+Surface today: `--version`, `hello`, `init`, `models`, `scorer`, `run`.
+`compare` lands in Week 5 — see IMPLEMENTATION_PLAN.md.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
 import click
 
 from prompteval.cost import UnknownModelError, get_pricing, list_models
+from prompteval.eval import Eval, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
@@ -169,6 +172,120 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
         if is_scorer(obj):
             out.append((name, inspect.getdoc(obj) or ""))
     return out
+
+
+@main.command()
+@click.option(
+    "--prompt",
+    "prompt_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to the system-prompt file the runner will send.",
+)
+@click.option(
+    "--tag",
+    required=True,
+    help="Identifier for this run — used as the persisted filename + compare key.",
+)
+@click.option(
+    "--eval-file",
+    "eval_file",
+    default="evals/eval.py",
+    show_default=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to the Python file that defines the Eval instance.",
+)
+@click.option(
+    "--model",
+    "model_override",
+    default=None,
+    help="Override the model declared in the Eval (default: use eval_def.model).",
+)
+def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None) -> None:
+    """Run an Eval against a prompt and persist the results.
+
+    Discovers the first `Eval` instance in EVAL_FILE, executes it against the
+    dataset that Eval declares, and writes results to .prompteval/runs/<tag>.json.
+    """
+    eval_def = _discover_eval(eval_file)
+    model = model_override or eval_def.model
+    dataset_path = Path(eval_def.dataset)
+
+    # The multiplication sign in the f-string is intentional — matches the
+    # README's killer-output spec so users see consistent run-header phrasing.
+    click.echo(
+        f"Running {_count_examples(dataset_path)} examples × {model} against {prompt_path}..."  # noqa: RUF001
+    )
+
+    def progress(i: int, n: int, ex_id: str, latency: float, error: str | None) -> None:
+        marker = "✗" if error else "✓"
+        click.echo(f"  [{i}/{n}] {ex_id:<24} {marker} {latency:0.2f}s")
+
+    result = run_eval(
+        eval_def,
+        prompt_path=prompt_path,
+        tag=tag,
+        model=model_override,
+        progress=progress,
+    )
+
+    saved_path = save_run(result)
+
+    click.echo("")
+    click.echo(f"=== {tag} ===")
+    for name, mean in result.scorer_means.items():
+        click.echo(f"{name:<28} {mean:.2f} (n={len(result.examples)})")
+    avg_cost = result.total_cost / max(1, len(result.examples))
+    click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
+    click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
+    click.echo(f"saved to: {saved_path}")
+
+
+def _discover_eval(eval_file: Path) -> Eval:
+    """Import EVAL_FILE and return the first Eval instance defined in it.
+
+    We add the file's directory to sys.path so relative imports inside the
+    user's eval.py work the same way they would for `python evals/eval.py`.
+    """
+    spec = importlib.util.spec_from_file_location("_user_eval", eval_file)
+    if spec is None or spec.loader is None:
+        raise click.ClickException(f"Could not load {eval_file}")
+    module = importlib.util.module_from_spec(spec)
+
+    parent = str(eval_file.parent.resolve())
+    added_to_path = parent not in sys.path
+    if added_to_path:
+        sys.path.insert(0, parent)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as err:
+        raise click.ClickException(
+            f"Failed to load {eval_file}: {type(err).__name__}: {err}"
+        ) from err
+    finally:
+        if added_to_path:
+            sys.path.remove(parent)
+
+    for name in dir(module):
+        obj = getattr(module, name)
+        if isinstance(obj, Eval):
+            return obj
+    raise click.ClickException(
+        f"No Eval instance found in {eval_file}. "
+        f"Add `eval = Eval(name=..., dataset=..., scorers=[...], model=...)` to the file."
+    )
+
+
+def _count_examples(dataset_path: Path) -> int:
+    """Cheap line-count for the dataset, used only for the user-facing progress
+    header — the runner does its own validating load."""
+    if not dataset_path.exists():
+        return 0
+    return sum(
+        1
+        for line in dataset_path.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
 
 
 if __name__ == "__main__":

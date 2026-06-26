@@ -28,17 +28,28 @@ from prompteval.cost import (
     list_models,
 )
 from prompteval.eval import (
+    Eval,
+    Example,
+    ExampleResult,
     LLMJudgeError,
+    RunResult,
     ScorerResult,
     llm_judge,
+    load_run,
+    run_eval,
+    save_run,
     scorer,
 )
 from prompteval.version import __version__
 
 __all__ = [
     "CostBreakdown",
+    "Eval",
+    "Example",
+    "ExampleResult",
     "LLMJudgeError",
     "ModelPricing",
+    "RunResult",
     "ScorerResult",
     "UnknownModelError",
     "Usage",
@@ -47,5 +58,8 @@ __all__ = [
     "get_pricing",
     "list_models",
     "llm_judge",
+    "load_run",
+    "run_eval",
+    "save_run",
     "scorer",
 ]
