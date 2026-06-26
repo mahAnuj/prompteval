@@ -1,41 +1,222 @@
 # prompteval
 
-**LLM eval framework with first-class token-cost tracking.**
+**Paired cost-and-quality delta reports for LLM prompts — so you can ship the cheaper version without guessing.**
 
 > _Did your prompt change save money without losing quality?_
 
-Paired cost-and-quality delta reports with significance — the question existing LLM eval tools (Braintrust, Langfuse, promptfoo, Phoenix) answer only awkwardly. They track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality, so a single report tells you whether v2 of your prompt is genuinely cheaper at equivalent quality, or just *looks* cheaper inside noise.
+prompteval is **pytest for LLM prompts**. You define a small golden test set and one or more scorers. You run it against your v1 prompt, then your v2 prompt, then ask it to compare. You get back a single report:
 
-See [docs/competitor-scan.md](docs/competitor-scan.md) for what the field currently does (and doesn't) ship.
+```
+                          v1          v2          Δ        95% CI         p
+─────────────────────────────────────────────────────────────────────────────
+mentions_required_terms   0.84        0.79        −0.05    [−0.13, +0.03]  0.21
+professional_tone         0.81        0.83        +0.02    [−0.05, +0.09]  0.58
+─────────────────────────────────────────────────────────────────────────────
+total cost                $0.0421     $0.0264     −37%     [−42%, −32%]   <0.001
+avg latency               1.4s        1.1s        −21%     [−28%, −14%]   <0.001
 
-> ⚠️ **Early alpha.** API will change weekly until v0.5. Stars / issues welcome to shape it.
+Quality verdict:  no significant regression
+Cost verdict:     significant 37% reduction
+Recommendation:   ship v2 — cost savings real, quality holds
+```
 
-## Status
+Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality. See [docs/competitor-scan.md](docs/competitor-scan.md) for verified evidence.
 
-- ✅ Project skeleton (uv, mypy strict, ruff, pytest)
-- ✅ CLI scaffold (`prompteval --version`)
-- 🚧 Cost-tracking core — Week 2
-- 🚧 Eval primitives + LLM-as-judge — Week 3-4
-- 🚧 Statistical comparison reports — Week 5
-- 🚧 GitHub Action — Week 6
-- 🚧 PyPI release — Week 9
+> ⚠️ **Early alpha — pre-v0.1.** API will change weekly until v0.5. Stars and issues welcome to shape it.
 
-10-week plan tracked publicly on the [project board](https://github.com/mahAnuj/prompteval/projects) (TODO).
+---
+
+## What prompteval is, and is not
+
+| ✅ It is | ❌ It is not |
+|---|---|
+| An **offline** eval framework (think pytest for prompts) | A runtime proxy or LLM gateway |
+| Run from your CLI or your CI | Sitting in your prod request path |
+| Compares two prompt versions on quality **and** cost | Caching prod LLM calls |
+| Statistical significance built in | Replacing Helicone / Portkey / LiteLLM |
+| Honest about scorer methodology | A black-box "AI judges your AI" |
+
+**Closest neighbors:** pytest, [Braintrust Experiments](https://braintrust.dev/), [promptfoo](https://promptfoo.dev/), [Inspect AI](https://inspect.aisi.org.uk/).
+
+**Not what we do:** [Helicone](https://helicone.ai/), [Portkey](https://portkey.ai/), [LiteLLM](https://github.com/BerriAI/litellm), [LangChain](https://langchain.com/).
+
+---
+
+## User journey (v1)
+
+Eight steps. ~30 minutes the first time. ~5 minutes every time after.
+
+### 1. Install
+
+```bash
+uv add prompteval        # or pip install prompteval
+prompteval --version
+```
+
+### 2. Bootstrap an evals folder
+
+```bash
+cd ~/my-app
+prompteval init
+```
+
+Creates:
+```
+evals/
+├── prompts/
+│   ├── v1.txt              # paste your current prompt
+│   └── v2.txt              # paste the variant you want to test
+├── dataset.jsonl           # one example pre-filled
+├── eval.py                 # pre-filled with 3 scorer examples
+└── .env.example            # ANTHROPIC_API_KEY=...
+```
+
+### 3. Bring your prompts + a few examples
+
+Paste prompts into `prompts/v1.txt` and `prompts/v2.txt`. Add 10–30 examples to `dataset.jsonl`:
+
+```jsonl
+{"id": "refund-1", "input": "My item arrived broken, refund please", "expected": {"must_mention": ["30-day refund"], "tone": "empathetic"}}
+{"id": "refund-2", "input": "Refund request 45 days after purchase", "expected": {"must_mention": ["30-day", "outside policy"], "tone": "polite"}}
+```
+
+The `expected` field is whatever your scorers want — there's no fixed schema.
+
+### 4. Define what "good" means for your use case (scorers)
+
+`eval.py` ships with three example scorers. Edit them, write new ones, or copy from templates:
+
+```python
+from prompteval import Eval, scorer, llm_judge
+
+@scorer
+def mentions_required_terms(output: str, expected: dict) -> float:
+    """Hard scorer: did the reply contain required phrases?"""
+    must = expected.get("must_mention", [])
+    if not must:
+        return 1.0
+    return sum(1 for t in must if t.lower() in output.lower()) / len(must)
+
+@scorer
+def professional_tone(output: str, expected: dict) -> float:
+    """LLM-as-judge: rate professionalism 0-1."""
+    return llm_judge(
+        rubric="Rate the tone of this support reply 0-1. 1=empathetic+professional, 0=rude.",
+        text=output,
+    )
+
+eval = Eval(
+    name="support-assistant",
+    dataset="dataset.jsonl",
+    scorers=[mentions_required_terms, professional_tone],
+)
+```
+
+Don't know where to start? `prompteval scorer list` shows 6–8 templates (regex match, JSON-schema valid, contains-substring, exact-match, LLM-judge factuality, LLM-judge tone). `prompteval scorer copy <name>` drops one into your `eval.py`.
+
+> **Honest caveat that matters:** prompteval doesn't define quality for your business — you do, by writing scorers. Get this part right and the tool earns its keep. Get it wrong and the tool will tell you wrong things confidently. **Every report shows which scorers ran on how many examples — methodology is always visible.** See [docs/writing-scorers.md](docs/writing-scorers.md) (coming v0.1) for guidance.
+
+### 5. Run baseline (v1)
+
+```bash
+prompteval run --prompt prompts/v1.txt --tag baseline
+```
+
+```
+Running 20 examples × 1 prompt against claude-sonnet-4-6...
+  refund-1   ✓ mentions_required_terms=1.00  professional_tone=0.85
+  refund-2   ✓ mentions_required_terms=0.50  professional_tone=0.90
+  ...
+=== baseline ===
+mentions_required_terms:  0.84 (n=20)
+professional_tone:         0.81 (n=20)
+total cost:                $0.0421  (avg $0.0021/call)
+avg latency:               1.4s
+saved to: .prompteval/runs/baseline-2026-06-26T1240.json
+```
+
+### 6. Run the variant (v2)
+
+```bash
+prompteval run --prompt prompts/v2.txt --tag short-prompt
+```
+
+### 7. Compare — the moment of truth
+
+```bash
+prompteval compare baseline short-prompt
+```
+
+You get the report shown at the top of this README — paired quality and cost deltas with 95% CIs, p-values, and a plain-English recommendation.
+
+### 8. (Optional but the moat) Lock it into CI
+
+```yaml
+# .github/workflows/prompt-quality.yml
+- run: prompteval run --prompt prompts/current.txt --tag pr-${{ github.sha }}
+- run: prompteval compare main pr-${{ github.sha }} --fail-on cost+15%,quality-5%
+```
+
+Any future prompt change gets gated. PR fails if cost regresses >15% or quality drops >5%, with the comparison report inline as a check.
+
+---
+
+## v1 scope (what we will ship)
+
+| Surface | Status |
+|---|---|
+| `prompteval --version` | ✅ shipped |
+| `prompteval init` — bootstrap an `evals/` folder | 🚧 Week 1 |
+| Cost model — provider-agnostic `(model, tokens) → USD`, correct cache-hit pricing | 🚧 Week 2 |
+| `@scorer` decorator + `llm_judge()` + 6–8 stock scorer templates | 🚧 Week 3 |
+| `Eval` runner — iterate dataset, call LLM, score, record cost+latency, persist run | 🚧 Week 3–4 |
+| `prompteval run` CLI | 🚧 Week 4 |
+| `prompteval compare` — paired deltas, bootstrap CIs, p-values, table output | 🚧 Week 5 |
+| HTML report (static file, no server) | 🚧 Week 6 |
+| `--fail-on cost+X%,quality-Y%` for CI | 🚧 Week 6 |
+| Dogfood eval against `mcp-multi-db` + writeup blog post | 🚧 Week 7 |
+| PyPI publish + GitHub release | 🚧 Week 9 |
+
+10-week plan, kill date **2026-08-16**.
+
+## Roadmap (post-v1, in order of likely priority)
+
+| Version | Feature |
+|---|---|
+| v0.2 | Phoenix OTel integration — ingest existing traces, add cost-comparison layer on top |
+| v0.2 | OpenAI cost support (v1 ships Anthropic-only) |
+| v0.3 | `prompteval scorer init` — AI assistant that generates scorers from a use-case description |
+| v1.1 | Compare >2 prompts in one report |
+| v1.x | Web dashboard (real-time only, not a daemon) |
+
+## What v1 explicitly is NOT
+
+Saying "no" loudly to avoid scope creep:
+
+- ❌ No web UI / no server (static HTML reports only)
+- ❌ No multi-user / no auth / no cloud
+- ❌ No tracing or observability (Phoenix / Langfuse exist)
+- ❌ No proxy / runtime / caching (Helicone / LiteLLM exist)
+- ❌ No fine-tuning, no training
+- ❌ No "AI assistant generates scorers for you" — that's v0.3
+- ❌ No support for >2 prompts compared at once — that's v1.1
+
+---
 
 ## Development
 
 ```bash
-# Install everything (creates a venv via uv)
+# Install (creates a venv via uv, pulls Python 3.12)
 uv sync
 
-# The full quality gate
-uv run ruff check .         # lint
-uv run ruff format --check . # format
-uv run mypy src tests        # types (strict)
-uv run pytest                # tests
-uv run prompteval hello      # CLI smoke
+# Full quality gate
+uv run ruff check .            # lint
+uv run ruff format --check .   # format
+uv run mypy src tests          # types (strict)
+uv run pytest                  # tests
+uv run prompteval --version    # CLI smoke
 
-# Or in one shot
+# One-liner
 uv run pytest && uv run mypy src tests && uv run ruff check .
 ```
 
