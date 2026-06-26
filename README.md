@@ -2,9 +2,11 @@
 
 **LLM eval framework with first-class token-cost tracking.**
 
-> Did your prompt change save money without losing quality?
+> _Did your prompt change save money without losing quality?_
 
-Most eval tools (Braintrust, Langfuse, promptfoo, Phoenix) treat token cost as a metric you can graph. prompteval treats it as a **comparison axis** — every eval run reports quality, latency, **and** cost side-by-side, with statistical significance, so you can answer the only question that matters: *did this prompt change save money without losing quality?*
+Paired cost-and-quality delta reports with significance — the question existing LLM eval tools (Braintrust, Langfuse, promptfoo, Phoenix) answer only awkwardly. They track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality, so a single report tells you whether v2 of your prompt is genuinely cheaper at equivalent quality, or just *looks* cheaper inside noise.
+
+See [docs/competitor-scan.md](docs/competitor-scan.md) for what the field currently does (and doesn't) ship.
 
 > ⚠️ **Early alpha.** API will change weekly until v0.5. Stars / issues welcome to shape it.
 
