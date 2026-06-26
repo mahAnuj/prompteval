@@ -1,0 +1,5 @@
+{"id": "refund-broken-item", "input": "I want my money back, item arrived broken", "expected": {"must_mention": ["30-day refund", "broken"], "tone": "empathetic"}}
+{"id": "refund-late", "input": "Can I get a refund 45 days after purchase?", "expected": {"must_mention": ["30-day", "outside policy"], "tone": "polite"}}
+{"id": "refund-changed-mind", "input": "I just changed my mind, can I return this?", "expected": {"must_mention": ["30-day", "return"], "tone": "polite"}}
+{"id": "refund-no-receipt", "input": "I lost my receipt, can I still return this?", "expected": {"must_mention": ["order history", "email"], "tone": "helpful"}}
+{"id": "refund-wrong-item", "input": "You sent me the wrong item! I want this fixed.", "expected": {"must_mention": ["wrong item", "refund", "apologize"], "tone": "apologetic"}}

@@ -58,6 +58,10 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Templates ship as resource files copied verbatim by `prompteval init`.
+# They reference v0.1 public API that doesn't exist yet (Week 3-4 work),
+# so linting them creates false positives. Treated as data, not code.
+extend-exclude = ["src/prompteval/init/templates"]
 
 [tool.ruff.lint]
 # Start strict; prune later only if a rule is more noise than value.
@@ -82,6 +86,7 @@ strict = true
 warn_unreachable = true
 pretty = true
 show_error_codes = true
+exclude = ["src/prompteval/init/templates/.*"]
 
 # ---------- pytest ----------
 [tool.pytest.ini_options]

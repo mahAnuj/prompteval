@@ -38,9 +38,9 @@ Legend:
 | 0 | Competitor scan + verification (Braintrust cookbook + Phoenix repo source) | ✅ | 2026-06-26 — `docs/competitor-scan.md` |
 | 0 | v1 scope locked, README rewritten with user journey + "is/is not" + "not building" lists | ✅ | 2026-06-26 |
 | 0 | This implementation plan | ✅ | 2026-06-26 |
-| 1 | `prompteval init` CLI — bootstraps `evals/` folder from templates | ⏳ | |
-| 1 | Templates folder (`prompts/v1.txt`, `prompts/v2.txt`, `dataset.jsonl`, `eval.py`, `.env.example`) | ⏳ | |
-| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | 📋 | |
+| 1 | `prompteval init` CLI — bootstraps `evals/` folder from templates | ✅ | 2026-06-26 — silent + opinionated; `--dir` / `--force` flags; 13 tests |
+| 1 | Templates folder (`prompts/v1.txt`, `prompts/v2.txt`, `dataset.jsonl`, `eval.py`, `.env.example`) | ✅ | 2026-06-26 — support-assistant persona matches README; gpt-4o-mini default |
+| 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | ⏳ | |
 | 2 | `prompteval models` CLI — list supported models + per-token pricing | 📋 | |
 | 3 | `@scorer` decorator + return-shape contract | 📋 | |
 | 3 | `llm_judge()` helper (OpenAI SDK, `gpt-4o-mini` by default) | 📋 | |
@@ -143,6 +143,10 @@ Decisions made + the rationale, in commit order. Append; don't rewrite.
 | 2026-06-21 | MIT license | Convention in Python OSS world; less friction than ISC for downstream users. |
 | 2026-06-26 | Anthropic-only cost model for v1 | OpenAI added in v0.2. Scope discipline > universal day-1 support. |
 | 2026-06-26 | **REVISED: OpenAI-only for v1, Anthropic moves to v0.2** | Original decision assumed founder had Anthropic API access (because they use Claude Code). Wrong assumption — Claude Code subscription ≠ API access. Founder has an existing OpenAI account. Switching saves a net-new vendor signup, doesn't compromise the wedge (cost-vs-quality demonstrable on OpenAI just as well), and actually *improves* the v0.2 multi-provider launch post (GPT-4o is more mainstream-recognizable than Sonnet for a "vs Llama 3.3" headline). Meta-lesson: validate provider access before locking. |
+| 2026-06-26 | `init` defaults: silent + opinionated (no interactive prompts), `evals/` as folder name, `gpt-4o-mini` as template default model | Fastest path to first run. `--dir` / `--force` flags cover the edge cases. Interactive prompts can be added later only if real users ask. |
+| 2026-06-26 | Templates live in `prompteval.init.templates` package, read via `importlib.resources` | Standard Python idiom. Works from wheel + source + zipped installs without `__file__` hacks. `__pycache__` gets ignored in `_walk` (caught by smoke test, not theory). |
+| 2026-06-26 | One source→target rename: `env.example` → `.env.example` | Dotfiles can be excluded by some packaging tools; storing the source un-dotted keeps the package contents predictable. |
+| 2026-06-26 | `templates/` excluded from ruff + mypy | Templates reference v0.1 public API that doesn't exist yet (Week 3-4 work). Treated as data files, not code. Linters off, contents preserved verbatim. |
 | 2026-06-26 | Cost is a **comparison axis**, not a tracked metric | Verified gap across Braintrust, Langfuse, promptfoo, Phoenix, Inspect AI. The wedge. |
 | 2026-06-26 | Phoenix is a future **integration target**, not a competitor | They have rich per-trace cost (OTel-LLM convention) but no comparison-axis use. v0.2 ingests their traces. |
 | 2026-06-26 | "AI assistant writes scorers" deferred to v0.3 | Genuinely great idea. Scope creep risk in v1. Templates ship in v0.1 for 80% of the pain. |
