@@ -1,9 +1,51 @@
 """prompteval — LLM eval framework with first-class token-cost tracking.
 
-The package surface is intentionally small for now; we'll expose more as we
-build out the eval primitives in week 2-3.
+Public API as of Week 3:
+
+  Cost (Week 2):
+    Usage, CostBreakdown, ModelPricing       — data shapes
+    compute_cost(model, usage)               — pure cost computation
+    get_pricing(name), list_models()         — pricing table accessors
+    UnknownModelError                        — typed exception
+
+  Eval scorers (Week 3):
+    scorer                                   — decorator marking a function as a scorer
+    ScorerResult                             — richer return type with reasoning/metadata
+    llm_judge(rubric, text)                  — LLM-as-judge helper
+    LLMJudgeError                            — raised when judge response can't be parsed
+
+  Coming Week 4: Eval runner — load dataset, iterate, call LLM, run scorers,
+  record cost+latency, persist run.
 """
 
+from prompteval.cost import (
+    CostBreakdown,
+    ModelPricing,
+    UnknownModelError,
+    Usage,
+    compute_cost,
+    get_pricing,
+    list_models,
+)
+from prompteval.eval import (
+    LLMJudgeError,
+    ScorerResult,
+    llm_judge,
+    scorer,
+)
 from prompteval.version import __version__
 
-__all__ = ["__version__"]
+__all__ = [
+    "CostBreakdown",
+    "LLMJudgeError",
+    "ModelPricing",
+    "ScorerResult",
+    "UnknownModelError",
+    "Usage",
+    "__version__",
+    "compute_cost",
+    "get_pricing",
+    "list_models",
+    "llm_judge",
+    "scorer",
+]

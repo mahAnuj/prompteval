@@ -42,10 +42,10 @@ Legend:
 | 1 | Templates folder (`prompts/v1.txt`, `prompts/v2.txt`, `dataset.jsonl`, `eval.py`, `.env.example`) | ✅ | 2026-06-26 — support-assistant persona matches README; gpt-4o-mini default |
 | 2 | Cost model — provider-agnostic `(model, usage) → USD` with correct cached-input pricing (OpenAI first) | ✅ | 2026-06-26 — `cost/{models,compute}.py`; pricing in YAML; 33 tests |
 | 2 | `prompteval models` CLI — list supported models + per-token pricing | ✅ | 2026-06-26 — `models list [--json]`, `models price <model> [--json]` |
-| 3 | `@scorer` decorator + return-shape contract | 📋 | |
-| 3 | `llm_judge()` helper (OpenAI SDK, `gpt-4o-mini` by default) | 📋 | |
-| 3 | 6–8 stock scorer templates (`exact_match`, `regex`, `contains`, `json_schema_valid`, `llm_judge_factuality`, `llm_judge_tone`, `length_between`, `not_empty`) | 📋 | |
-| 3 | `prompteval scorer list` + `prompteval scorer copy <name>` CLI | 📋 | |
+| 3 | `@scorer` decorator + return-shape contract | ✅ | 2026-06-26 — signature-driven dispatch (subset of {input, output, expected}); ScorerResult dataclass for reasoning+metadata; 9 tests |
+| 3 | `llm_judge()` helper (OpenAI SDK, `gpt-4o-mini` by default) | ✅ | 2026-06-26 — parses first number from response; validates [0, 1]; LLMJudgeError for unparseable / out-of-range; 13 tests with mocked client |
+| 3 | 6–8 stock scorer templates | ✅ | 2026-06-26 — shipped 9: exact_match, contains_substring, regex_match, not_empty, length_between, json_schema_valid, mentions_required_terms, llm_judge_tone, llm_judge_factuality; 40 tests |
+| 3 | `prompteval scorer list` + `prompteval scorer copy <name>` CLI | ✅ | 2026-06-26 — sources copied via `inspect.getsource` so output is always in sync with the live function; 6 tests |
 | 3–4 | `Eval` class + runner — load dataset, iterate, call LLM, run scorers, record usage + latency, persist run JSON to `.prompteval/runs/` | 📋 | |
 | 4 | `prompteval run --prompt path --tag name` CLI | 📋 | |
 | 5 | `prompteval compare <tag-a> <tag-b>` — paired deltas, bootstrap CIs, p-values, plain-text table | 📋 | |
@@ -84,6 +84,7 @@ These are valid feature requests we'll **decline** for v1 to keep scope honest:
 
 | Version | Theme | Status |
 |---|---|---|
+| v1.1 | **Callable-runner hook for multi-agent / multi-step evals** — `Eval(runner=my_func)` accepts any `Callable[[Example], RunResult]` so users can wrap CrewAI / AutoGen / LangGraph / custom pipelines. v1's internal `Eval` already takes a `runner` (default = single-prompt single-call); v1.1 exposes the override. Cost = sum of all LLM calls per example, no `compute_cost` math changes. Deferred from v1 because (a) splits the "edit prompts/v1.txt, run, compare" README on-ramp, (b) needs its own test suite for multi-call aggregation + error semantics, (c) we don't have a real multi-agent workload to validate the abstraction against. | ❄️ planned post-v1 |
 | v0.2 | Phoenix OTel integration — ingest existing traces, add cost-comparison layer on top | ❄️ planned post-v1 |
 | v0.2 | Anthropic cost model + tokenizer | ❄️ planned post-v1 |
 | v0.2 | **Multi-provider model registry** — OpenAI + Anthropic + OpenAI-compatible endpoints (Ollama, vLLM, Together, Groq, Fireworks). Unlocks one-command **frontier-vs-open-source comparison** (e.g. `GPT-4o vs Llama-3.3-70B on your task`). Note: v1 already supports this via two manual runs + `compare`; v0.2 makes it ergonomic and ships a launch post — *"Is Llama 3.3 actually cheaper than GPT-4o for [your task]? Here's how to know in 10 minutes."* | ❄️ planned post-v1 |
@@ -155,6 +156,10 @@ Decisions made + the rationale, in commit order. Append; don't rewrite.
 | 2026-06-26 | Compare exactly 2 prompts in v1 | Multi-way comparison needs different stats + UX. v1.1. |
 | 2026-06-26 | Pairwise statistical comparison via bootstrap CIs + paired t-test / Wilcoxon | Robust; doesn't assume normality; explains itself in plain English. Falls back to McNemar's for binary pass/fail scorers. |
 | 2026-06-26 | Run persistence as JSON files in `.prompteval/runs/` (no DB) | Single-developer tool; git-friendly; zero setup. SQLite if v1.x needs query performance. |
+| 2026-06-26 | Multi-agent / multi-step evals (CrewAI, AutoGen, LangGraph, custom pipelines) deferred to v1.1 | v1 ships single-LLM-call-per-example. The architectural fix is a `runner: Callable[[Example], RunResult]` hook on `Eval`; v1's internal design includes this seam (default runner = single OpenAI call). v1.1 exposes the user-facing override. Reasons to defer: (a) the README on-ramp splits when there are two valid run-shapes, (b) multi-call aggregation needs its own test suite, (c) we don't have a real multi-agent workload to validate the abstraction against. |
+| 2026-06-26 | Scorers use signature-driven dispatch over fixed positional args | Three valid param names (`input`, `output`, `expected`), scorer declares any subset, runner inspects the signature and passes only what's asked. Same pattern as pytest fixtures. Cleaner than `(input, output, expected) -> float` everywhere — simple scorers can be `def my(output)` without the unused-args noise. Unknown param names raise `TypeError` at decoration time, not call time, so typos fail at import. |
+| 2026-06-26 | LLM-judge costs are NOT aggregated into v1 eval cost report | Judge calls happen inside scorer functions, separate from the prompt-vs-prompt comparison we're measuring. Aggregating them would muddy "v1 prompt vs v2 prompt cost" (the wedge). v0.2 adds judge-cost separation — report shows "prompt cost: $X, judge overhead: $Y." For now: documented in `llm_judge` docstring as "operational overhead, not part of the v1 vs v2 cost comparison." |
+| 2026-06-26 | `scorer copy` outputs source via `inspect.getsource`, not via a templates folder | Stock scorers are real `@scorer` functions in `eval/stock.py`. `inspect.getsource` reads the source directly from the installed wheel. No template-file duplication; what runs and what gets copied are guaranteed identical. |
 
 ---
 

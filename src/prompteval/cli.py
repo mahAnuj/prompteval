@@ -1,11 +1,12 @@
 """Click-based CLI for prompteval.
 
-Surface today: `--version`, `hello`, `init`, `models`. Run, compare, scorer
-land later in v0.1 — see IMPLEMENTATION_PLAN.md for the schedule.
+Surface today: `--version`, `hello`, `init`, `models`, `scorer`. Run + compare
+land in Week 4-5 — see IMPLEMENTATION_PLAN.md for the schedule.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,8 @@ from pathlib import Path
 import click
 
 from prompteval.cost import UnknownModelError, get_pricing, list_models
+from prompteval.eval import stock as stock_scorers
+from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
 from prompteval.version import __version__
 
@@ -128,6 +131,44 @@ def models_price(model: str, as_json: bool) -> None:
     click.echo(f"Verified on:   {pricing.pricing_updated_at}")
     if pricing.notes:
         click.echo(f"Notes:         {pricing.notes}")
+
+
+@main.group()
+def scorer() -> None:
+    """List + copy stock scorers shipped with prompteval."""
+
+
+@scorer.command("list")
+def scorer_list() -> None:
+    """Show every stock scorer with its one-line docstring summary."""
+    for name, doc in _iter_stock_scorers():
+        first_line = doc.splitlines()[0] if doc else ""
+        click.echo(f"  {name:<26} {first_line}")
+
+
+@scorer.command("copy")
+@click.argument("name")
+def scorer_copy(name: str) -> None:
+    """Print the source of stock scorer NAME to stdout.
+
+    Pipe to a file or paste into your evals/eval.py — these are templates,
+    not bullet-proof utilities; tune them for your use case.
+    """
+    func = getattr(stock_scorers, name, None)
+    if func is None or not is_scorer(func):
+        available = ", ".join(n for n, _ in _iter_stock_scorers())
+        raise click.ClickException(f"Unknown stock scorer: {name!r}. Available: {available}.")
+    click.echo(inspect.getsource(func))
+
+
+def _iter_stock_scorers() -> list[tuple[str, str]]:
+    """Discover (name, docstring) pairs for every @scorer in prompteval.eval.stock."""
+    out: list[tuple[str, str]] = []
+    for name in sorted(dir(stock_scorers)):
+        obj = getattr(stock_scorers, name)
+        if is_scorer(obj):
+            out.append((name, inspect.getdoc(obj) or ""))
+    return out
 
 
 if __name__ == "__main__":
