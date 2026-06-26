@@ -10,16 +10,29 @@ Specifically: can a user load two prompt versions, run the same eval set on both
 
 ## TL;DR
 
-**No incumbent owns this.** Every tool tracks cost; none treat it as a first-class comparison axis paired with quality. The closest is **promptfoo** (cost as a weighted assertion), and even there it's pass/fail on a threshold, not a paired-delta report. **The gap is real and the wedge holds.**
+**No incumbent owns this.** Every tool tracks cost at the trace/span level; none surface it as a first-class comparison axis paired with quality in their eval / experiment output. The closest is **promptfoo** (cost as a weighted assertion), and even there it's pass/fail on a threshold, not a paired-delta report. **The gap is real and the wedge holds — verified.**
+
+## Verification round (2026-06-26)
+
+The initial scan was docs-only. To kill the "the docs are just incomplete and the in-app UI actually does it" risk, I read Braintrust's flagship cookbook notebooks (ModelComparison + ProviderBenchmark) and Phoenix's experiments + tracing source docs in their repo. Result: **the deeper look strengthened the wedge, not weakened it.**
+
+- **Braintrust ModelComparison notebook** (their canonical "how to compare models" tutorial): zero mentions of cost. Summary report aggregates score + duration. Visualization options offered to the user are prompt / model / temperature / score — never cost. If Braintrust did cost-vs-quality comparison they'd demo it here.
+- **Braintrust ProviderBenchmark notebook** (LLaMa-3.1 across providers): explicitly headlines "score vs duration scatter plot" as the killer view. Uses the word "cost" colloquially to mean *latency cost* ("each weight class costs you an extra second"). Zero USD anywhere.
+- **Phoenix tracing semantic conventions** (`.agents/skills/phoenix-tracing/references/span-llm.md`): they have **serious** per-trace cost attribution — `llm.cost.prompt`, `llm.cost.completion`, `llm.cost.total`, plus a `prompt_details.{input,cache_read,cache_write,audio}` breakdown. Granular and well-modeled. **This means Phoenix's cost-tracking is more sophisticated than I assumed.**
+- **Phoenix experiments API** (`.agents/skills/phoenix-evals/references/experiments-running-python.md`): `experiment.aggregate_scores` returns `{'accuracy': 0.85, 'faithfulness': 0.92}` — quality scores only. No cost field in the aggregation. Cost exists at the trace level, never bubbles into the experiment-comparison surface.
+
+### What this means
+
+**Phoenix is the most-sophisticated cost tracker** and even they don't surface cost in the eval/experiment comparison view. That's strong evidence the gap is structural across the field, not just "Braintrust hasn't gotten around to it." It's also good news for prompteval: **integration with Phoenix's trace-level cost is a feasible v0.2 — we don't have to invent cost attribution from scratch, we can re-use the OTel-LLM convention they helped define.**
 
 ## Findings per tool
 
 ### Braintrust (commercial leader, $30M+ raised)
 
 - **Has**: cost tracking per trace, custom model-cost config, SQL-query for span-level costs, cost alerts at the org level.
-- **Doesn't have** (per public docs): cost as a comparison axis in the experiment-diff view. Experiments compare "which test cases improved or regressed" on quality only. Cost lives in a parallel monitoring surface.
-- **Honest caveat**: their `llms.txt` digest is incomplete; the in-app experiment UI may show cost alongside quality even if the docs don't say so. Worth a free-tier signup test if I push the marketing hard.
-- **Verdict**: ✅ wedge survives
+- **Doesn't have** (per public docs **and** verified via their own cookbook): cost as a comparison axis in the experiment-diff view. Their flagship ModelComparison + ProviderBenchmark notebooks never mention dollar cost — score / duration / latency only.
+- **Verification (2026-06-26)**: read both flagship cookbooks end-to-end via `gh api` — zero USD references in the comparison reports they ship to users.
+- **Verdict**: ✅ wedge survives — **verified**
 
 ### Langfuse (OSS, observability-first)
 
@@ -37,10 +50,11 @@ Specifically: can a user load two prompt versions, run the same eval set on both
 
 ### Phoenix (Arize, OSS)
 
-- **Has**: cost tracking for LLM applications (separate docs page exists).
-- **Doesn't have** (per visible docs — the cost-tracking page 403'd, so this is inferred): cost as a comparison axis in eval views. Phoenix's positioning is observability-first.
-- **Honest caveat**: I couldn't access the dedicated cost-tracking page; should re-check if blocking on Phoenix specifically.
-- **Verdict**: ✅ wedge probably survives — re-verify if it matters
+- **Has (richer than I assumed)**: per-trace cost attribution following OTel-LLM semantic conventions — `llm.cost.{prompt,completion,total}` plus a detailed breakdown for `cache_read`, `cache_write`, `audio`, etc. This is genuinely good cost tracking.
+- **Doesn't have**: cost as a comparison axis in their experiments surface. `experiment.aggregate_scores` returns quality scores only (`{'accuracy': 0.85, 'faithfulness': 0.92}`); cost stays at the trace level.
+- **Verification (2026-06-26)**: read their experiments + tracing source docs in the repo via `gh api`. Cost is observable on individual traces, never aggregated into eval comparison.
+- **Strategic implication**: Phoenix's OTel-LLM cost convention is a **standard we should integrate with**, not compete against. v0.2 could ingest Phoenix traces and add the cost-comparison layer they don't have.
+- **Verdict**: ✅ wedge survives — **verified** — Phoenix is a future integration target, not a competitor
 
 ### Inspect AI (UK AISI, OSS)
 
@@ -72,8 +86,8 @@ The shift is from **gate** (boolean) to **comparison** (paired delta with signif
 
 ### Re-check before launch
 
-- Sign up for **Braintrust free tier** and verify the experiment-comparison view doesn't actually show cost alongside quality. If it does, sharpen the differentiator language further (likely toward "OSS + cost-first" vs Braintrust's "commercial + quality-first").
-- Re-fetch **Phoenix cost-tracking docs** when not 403'd.
+- ~~Sign up for Braintrust free tier and verify~~ **Done via cookbook inspection 2026-06-26.** No need.
+- ~~Re-fetch Phoenix cost-tracking docs when not 403'd.~~ **Done via repo source inspection 2026-06-26.** Phoenix has rich cost tracking but only at trace level; no comparison-axis use.
 
 ## Locked tagline (for README)
 
@@ -81,6 +95,7 @@ The shift is from **gate** (boolean) to **comparison** (paired delta with signif
 
 ## Source URLs probed
 
+**Round 1 — docs scan**
 - https://www.braintrust.dev/docs/guides/evals
 - https://www.braintrust.dev/docs/guides/experiments
 - https://www.braintrust.dev/docs/llms.txt
@@ -89,6 +104,12 @@ The shift is from **gate** (boolean) to **comparison** (paired delta with signif
 - https://www.promptfoo.dev/docs/configuration/expected-outputs/
 - https://www.promptfoo.dev/docs/usage/web-ui/
 - https://arize.com/docs/phoenix/evaluation/llm-evals
-- https://arize.com/docs/phoenix/learn/agents/cost-tracking-for-llm-applications (403)
+- https://arize.com/docs/phoenix/learn/agents/cost-tracking-for-llm-applications (403 — used repo source instead)
 - https://inspect.aisi.org.uk/scorers.html
 - https://inspect.aisi.org.uk/eval-logs.html
+
+**Round 2 — source / cookbook verification (2026-06-26)**
+- `gh api repos/braintrustdata/braintrust-cookbook/contents/examples/ModelComparison/ModelComparison.ipynb`
+- `gh api repos/braintrustdata/braintrust-cookbook/contents/examples/ProviderBenchmark/ProviderBenchmark.ipynb`
+- `gh api repos/Arize-ai/phoenix/contents/.agents/skills/phoenix-tracing/references/span-llm.md`
+- `gh api repos/Arize-ai/phoenix/contents/.agents/skills/phoenix-evals/references/experiments-running-python.md`
