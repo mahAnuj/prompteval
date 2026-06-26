@@ -161,45 +161,14 @@ Any future prompt change gets gated. PR fails if cost regresses >15% or quality 
 
 ---
 
-## v1 scope (what we will ship)
+## Status, scope, and roadmap
 
-| Surface | Status |
-|---|---|
-| `prompteval --version` | ✅ shipped |
-| `prompteval init` — bootstrap an `evals/` folder | 🚧 Week 1 |
-| Cost model — provider-agnostic `(model, tokens) → USD`, correct cache-hit pricing | 🚧 Week 2 |
-| `@scorer` decorator + `llm_judge()` + 6–8 stock scorer templates | 🚧 Week 3 |
-| `Eval` runner — iterate dataset, call LLM, score, record cost+latency, persist run | 🚧 Week 3–4 |
-| `prompteval run` CLI | 🚧 Week 4 |
-| `prompteval compare` — paired deltas, bootstrap CIs, p-values, table output | 🚧 Week 5 |
-| HTML report (static file, no server) | 🚧 Week 6 |
-| `--fail-on cost+X%,quality-Y%` for CI | 🚧 Week 6 |
-| Dogfood eval against `mcp-multi-db` + writeup blog post | 🚧 Week 7 |
-| PyPI publish + GitHub release | 🚧 Week 9 |
+Living source of truth lives in **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** —
+week-by-week status table, decisions log, explicit non-goals, and post-v1 roadmap.
+That file is updated the same commit any code ships; this README only summarises.
 
-10-week plan, kill date **2026-08-16**.
-
-## Roadmap (post-v1, in order of likely priority)
-
-| Version | Feature |
-|---|---|
-| v0.2 | Phoenix OTel integration — ingest existing traces, add cost-comparison layer on top |
-| v0.2 | OpenAI cost support (v1 ships Anthropic-only) |
-| v0.3 | `prompteval scorer init` — AI assistant that generates scorers from a use-case description |
-| v1.1 | Compare >2 prompts in one report |
-| v1.x | Web dashboard (real-time only, not a daemon) |
-
-## What v1 explicitly is NOT
-
-Saying "no" loudly to avoid scope creep:
-
-- ❌ No web UI / no server (static HTML reports only)
-- ❌ No multi-user / no auth / no cloud
-- ❌ No tracing or observability (Phoenix / Langfuse exist)
-- ❌ No proxy / runtime / caching (Helicone / LiteLLM exist)
-- ❌ No fine-tuning, no training
-- ❌ No "AI assistant generates scorers for you" — that's v0.3
-- ❌ No support for >2 prompts compared at once — that's v1.1
+10-week build. Kill date **2026-08-16**. As of 2026-06-26: Week 0 done (bootstrap +
+competitor scan + scope lock); Week 1 (`prompteval init`) up next.
 
 ---
 
