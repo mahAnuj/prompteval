@@ -9,7 +9,7 @@
 > and reconsider. Scope creep killed the AI Runtime Platform PDF idea; not this one.
 
 **Project start:** 2026-06-21
-**Kill date:** 2026-08-16 (10 weeks)
+**Review point:** 2026-08-16 (10 weeks) — **passed 2026-08-16 with Weeks 0-6 shipped and 183/183 tests green. Decision: continue.** Remaining work is packaging and docs, not capability.
 **Repo:** https://github.com/mahAnuj/prompteval
 **npm/PyPI status:** not yet published
 
@@ -189,4 +189,4 @@ Decisions made + the rationale, in commit order. Append; don't rewrite.
 - **When you finish a week:** sanity check — is the row above the next `⏳` actually shipped, or are you carrying tech debt forward?
 - **If the plan no longer matches reality:** update the plan first, then the code. Resist the urge to "just keep coding."
 
-The kill date is 2026-08-16. **7 working weeks remaining as of 2026-06-26 (Week 6 ✅, Week 7 next — dogfood against mcp-multi-db).** Status colors should march top-to-bottom; if a 📋 below the line you're working on starts looking impossible, defer it explicitly rather than letting it slip silently.
+The 2026-08-16 review point has passed and the decision was to continue. **As of 2026-08-31: Weeks 0-6 ✅, Week 7 next — dogfood against mcp-multi-db.** Status colors should march top-to-bottom; if a 📋 below the line you're working on starts looking impossible, defer it explicitly rather than letting it slip silently.

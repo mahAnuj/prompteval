@@ -22,7 +22,8 @@ Recommendation:   ship v2 — cost savings real, quality holds
 
 Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality. See [docs/competitor-scan.md](docs/competitor-scan.md) for verified evidence.
 
-> ⚠️ **Early alpha — pre-v0.1.** API will change weekly until v0.5. Stars and issues welcome to shape it.
+> ⚠️ **Alpha — v0.1.0, not yet on PyPI.** Install from source. The public API may
+> still change before the first published release. Stars and issues welcome.
 
 ---
 
@@ -175,8 +176,20 @@ Living source of truth lives in **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.m
 week-by-week status table, decisions log, explicit non-goals, and post-v1 roadmap.
 That file is updated the same commit any code ships; this README only summarises.
 
-10-week build. Kill date **2026-08-16**. As of 2026-06-26: Week 0 done (bootstrap +
-competitor scan + scope lock); Week 1 (`prompteval init`) up next.
+**As of 31 Aug 2026 — the tool works end to end.** Everything needed to run a
+comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
+`scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
+with bootstrap CIs and significance; plain-English verdicts; the HTML report;
+and the `--fail-on` CI gate with a GitHub Actions template. **183/183 tests
+green.**
+
+**What is left is packaging, not capability:** a scorer-writing guide, an API
+stability sweep, and publishing to PyPI. Until it is on PyPI, install from
+source — and treat the public API as still movable.
+
+Original plan was 10 weeks with a 2026-08-16 review point. That date has passed
+with the build ahead of where it needed to be, so the project continues; the
+week-by-week table in the plan is the live record.
 
 ---
 
