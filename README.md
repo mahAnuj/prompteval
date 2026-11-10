@@ -22,8 +22,11 @@ Recommendation:   ship v2 — cost savings real, quality holds
 
 Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality. See [docs/competitor-scan.md](docs/competitor-scan.md) for verified evidence.
 
-> ⚠️ **Alpha — v0.1.0, not yet on PyPI.** Install from source. The public API may
-> still change before the first published release. Stars and issues welcome.
+> ⚠️ **Alpha — v0.1.0.** The PyPI package is **`prompteval-delta`** (first
+> release pending; until then, install from source). **Do not
+> `pip install prompteval`** — that name on PyPI belongs to an unrelated
+> project. The import and the command are still `prompteval`. The public API
+> may still change before 1.0. Stars and issues welcome.
 
 ---
 
@@ -50,7 +53,7 @@ Eight steps. ~30 minutes the first time. ~5 minutes every time after.
 ### 1. Install
 
 ```bash
-uv add prompteval        # or pip install prompteval
+uv add prompteval-delta        # or: pip install prompteval-delta
 prompteval --version
 ```
 
@@ -180,12 +183,13 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **183/183 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **210/210 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API
-stability sweep, and publishing to PyPI. Until it is on PyPI, install from
-source — and treat the public API as still movable.
+stability sweep, and the first PyPI release (as `prompteval-delta`). Until that
+release is live, install from source — and treat the public API as still
+movable.
 
 Original plan was 10 weeks with a 2026-08-16 review point. That date has passed
 with the build ahead of where it needed to be, so the project continues; the

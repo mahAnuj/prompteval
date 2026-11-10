@@ -7,7 +7,7 @@
 #   3. Edit the prompt paths + tags to match your `evals/` layout.
 #
 # What this does on every PR:
-#   - Sets up Python + installs prompteval from PyPI
+#   - Sets up Python + installs prompteval from PyPI (as prompteval-delta)
 #   - Runs your eval against the BASELINE prompt (whatever's on `main`) and the
 #     CANDIDATE prompt (the PR's version)
 #   - Computes the paired delta report
@@ -40,7 +40,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install prompteval
-        run: pip install prompteval
+        run: pip install prompteval-delta
 
       - name: Run baseline (prompt from main)
         env:

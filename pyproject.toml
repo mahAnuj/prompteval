@@ -1,5 +1,8 @@
 [project]
-name = "prompteval"
+# Distribution name. "prompteval" on PyPI belongs to an unrelated project, so
+# this one installs as prompteval-delta; the import and the CLI stay
+# `prompteval` (module-name below).
+name = "prompteval-delta"
 version = "0.1.0"
 description = "LLM eval framework with first-class token-cost tracking. Did your prompt change save money without losing quality?"
 readme = "README.md"
@@ -57,6 +60,10 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# uv_build would otherwise look for a `prompteval_delta` module.
+module-name = "prompteval"
 
 # ---------- ruff ----------
 [tool.ruff]

@@ -1,0 +1,51 @@
+name: release
+
+# Publishes to PyPI as `prompteval-delta` when a version tag is pushed.
+#
+# Uses PyPI trusted publishing (OIDC): no API token is stored anywhere. One-time
+# setup on pypi.org -> Account -> Publishing -> "Add a new pending publisher":
+#   PyPI project name: prompteval-delta
+#   Owner: mahAnuj   Repository: prompteval
+#   Workflow name: release.yml   Environment: pypi
+#
+# Release: bump src/prompteval/version.py and pyproject.toml, then
+#   git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(grep -Po '__version__ = "\K[^"]+' src/prompteval/version.py)"
+          test "$tag" = "$pkg" || { echo "tag v$tag != version $pkg"; exit 1; }
+      - name: Tests
+        run: uv sync --dev && uv run pytest -q
+      - name: Build sdist and wheel
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # trusted publishing; nothing else
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
