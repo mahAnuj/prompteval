@@ -11,7 +11,7 @@
 **Project start:** 2026-06-21
 **Review point:** 2026-08-16 (10 weeks) — **passed 2026-08-16 with Weeks 0-6 shipped and 183/183 tests green. Decision: continue.** Remaining work is packaging and docs, not capability.
 **Repo:** https://github.com/mahAnuj/prompteval
-**npm/PyPI status:** not yet published. Distribution name will be **`prompteval-delta`** — `prompteval` on PyPI is an unrelated project (v0.0.1, another author), found 2026-11-10. Import and CLI stay `prompteval`.
+**PyPI status:** v0.1.0 published 2026-11-11 as **`prompteval-delta`** (https://pypi.org/project/prompteval-delta/). Distribution name is **`prompteval-delta`** — `prompteval` on PyPI is an unrelated project (v0.0.1, another author), found 2026-11-10. Import and CLI stay `prompteval`.
 
 ---
 
@@ -57,7 +57,7 @@ Legend:
 | 7 | First blog post draft (working title: *"How I cut my mcp-multi-db's token cost 38% without breaking tool accuracy"*) | 📋 | |
 | 8 | `docs/writing-scorers.md` guide | 📋 | |
 | 8 | API stability sweep — freeze public surface; mark internal modules with leading `_` | 📋 | |
-| 9 | PyPI publish (test-PyPI first, then real) | 🚧 | 2026-11-10 — renamed distribution to `prompteval-delta`; `release.yml` publishes via PyPI trusted publishing on a `v*` tag. Waiting on the PyPI trusted-publisher setup. |
+| 9 | PyPI publish (test-PyPI first, then real) | ✅ | 2026-11-11 — v0.1.0 published as `prompteval-delta` by `release.yml` (trusted publishing, tag `v0.1.0`); verified by a clean install from PyPI: CLI, import and `init` work. Test-PyPI skipped. |
 | 9 | GitHub release v0.1.0 + release notes | 📋 | |
 | 10 | Launch — LinkedIn, X thread, awesome-llm-evals PR, second blog post | 📋 | |
 
