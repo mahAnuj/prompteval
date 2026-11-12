@@ -1,4 +1,59 @@
-# Week 0 — competitor scan
+# Competitor scan
+
+## Re-check — 2026-11-12 (supersedes the conclusions below where they differ)
+
+Checked against each tool's current docs and source (fetched 2026-11-12; URLs
+below). The two load-bearing claims were confirmed by a second, independent
+fetch. Question: can it compare two prompts or models on the same data, show a
+cost delta, test whether the differences are real, and gate a PR on it?
+
+| Tool | Same-data comparison | Cost per variant / cost delta | Significance or a quality verdict | CI gate / PR comment |
+|---|---|---|---|---|
+| promptfoo | Yes | Cost per cell and per prompt; no delta | No (a Wilson CI only for `--repeat` stability) | Action comments pass/fail counts; "does not run separate base and head evaluations" |
+| Braintrust | Yes, baseline-aligned per row | Yes, "delta vs. base" including cost | No CIs; a heuristic grade: "Improvement, Regression, Tradeoff, or Tie" | `eval-action` PR comment can include cost vs. base |
+| Langfuse | Yes | "score, cost, and latency differences" in the UI | No | Action comments scores and pass/regression, no cost |
+| Arize Phoenix | Yes | Cost per experiment, cost charts; no delta | No | pytest gate; optional PR summary (contents unverified) |
+| DeepEval / Confident AI | Yes | Cost and tokens per test case; deltas on scores only | Says "statistical rigor"; no CI computed in the docs | `deepeval test run`, `confident-ai gate`; no PR comment found |
+| Inspect AI | Yes, several models | Cost data and `cost_limit`; no delta | Per-run `ci()` / bootstrap stderr, not on the paired difference | No Action found |
+
+**What changed since June.** Braintrust, not promptfoo, is now the closest
+rival: baseline-paired deltas, a cost delta against the baseline, a grade that
+weighs cost, and PR comments that can show cost. Its cost guide describes the
+same use case ("whether a lower-cost model or scorer holds quality on your own
+data"). The old README line, that incumbents only "track cost as a metric you
+graph", is no longer true of it.
+
+**What still holds.** None of the six computes a confidence interval or a
+significance test on the *paired difference* in quality or cost, and none
+gives a non-inferiority verdict (holds / worse / inconclusive). Searching
+Braintrust's full docs (`llms-full.txt`) for "confidence interval",
+"statistical significance" and "p-value" finds nothing (checked 2026-11-12).
+promptfoo's cost check is still a per-call threshold.
+
+**Positioning, adjusted.** Lead on whether the differences are real, and on
+openness, not on showing a cost delta:
+
+> Other tools show you that B costs less and scores two points higher.
+> prompteval tells you whether those two points, and the savings, are real:
+> paired confidence intervals and a holds / worse / inconclusive verdict,
+> gated in CI, open source, no account.
+
+Sources (all fetched 2026-11-12):
+- promptfoo cost assertion: https://raw.githubusercontent.com/promptfoo/promptfoo/main/site/docs/configuration/expected-outputs/deterministic.md
+- promptfoo web UI: https://www.promptfoo.dev/docs/usage/web-ui/
+- promptfoo Wilson CI: https://www.promptfoo.dev/docs/guides/evaluate-llm-temperature/
+- promptfoo Action: https://raw.githubusercontent.com/promptfoo/promptfoo-action/main/README.md
+- Braintrust comparisons: https://docs.braintrust.dev/evaluate/compare-experiments.md
+- Braintrust cost guide: https://docs.braintrust.dev/admin/billing/optimize-costs.md
+- Braintrust CI: https://raw.githubusercontent.com/braintrustdata/eval-action/main/README.md, https://docs.braintrust.dev/evaluate/run-in-ci.md
+- Langfuse: https://langfuse.com/docs/evaluation/experiments/compare-experiments.md, https://langfuse.com/docs/evaluation/experiments/experiments-ci-cd.md
+- Phoenix: https://arize.com/docs/phoenix/tracing/how-to-tracing/cost-tracking.md, https://arize.com/docs/phoenix/datasets-and-experiments/how-to-experiments/eval-ci-with-pytest.md
+- Confident AI: https://www.confident-ai.com/docs/llm-evaluation/experiments.md
+- Inspect AI: https://inspect.aisi.org.uk/metrics.html.md, https://inspect.aisi.org.uk/setting-limits.html.md
+
+---
+
+## Original scan — 2026-06-26
 
 > _Dated 2026-06-26. Scan-by-docs, not hands-on use. Anything marked **strong claim** I want to verify hands-on before quoting in marketing._
 

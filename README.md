@@ -20,7 +20,7 @@ Cost verdict:     significant 37% reduction
 Recommendation:   ship v2 — cost savings real, quality holds
 ```
 
-Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality. See [docs/competitor-scan.md](docs/competitor-scan.md) for verified evidence.
+Other tools can show you that version B costs less and scores two points higher. prompteval tells you **whether those two points, and the savings, are real**: paired confidence intervals on quality and cost, a holds / worse / inconclusive verdict, and a CI gate, open source with no account. See [docs/competitor-scan.md](docs/competitor-scan.md) for what each tool does, with sources (re-checked 2026-11-12).
 
 [![PyPI](https://img.shields.io/pypi/v/prompteval-delta)](https://pypi.org/project/prompteval-delta/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/prompteval-delta)](https://pypistats.org/packages/prompteval-delta)

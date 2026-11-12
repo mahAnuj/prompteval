@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Competitor scan re-checked against current docs (2026-11-12); README
+  positioning updated: Braintrust now shows cost deltas, so prompteval leads on
+  whether differences are real (paired CIs, verdict), not on showing them (#16).
 - `prompteval demo`: a full comparison report in a second, with no API key or
   network, from two bundled, clearly labelled illustrative runs (#11).
 - `--unpriced` on `run` and `sweep` runs a model with no known price: tokens
