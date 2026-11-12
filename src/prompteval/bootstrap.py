@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from prompteval.cost import ModelPricing, UnknownModelError, Usage, compute_cost, resolve_pricing
+from prompteval.criteria import CRITERIA_DIR
 
 DRAFT_MARKER = "# PROMPTEVAL-DRAFT"
 DRAFT_LINE = (
@@ -51,13 +52,15 @@ SHAPE = """Return a JSON object with exactly these keys:
   "checks": {"must_mention": <bool>, "json_keys": <bool>, "length": <bool>},
   "rule_sources": {"must_mention": "<quote from the prompt or empty>",
                    "json_keys": "<quote or empty>", "length": "<quote or empty>"},
-  "judge_rubric": "<instructions for a judge model rating ONE reply from 0 to 1 on the
-                   subjective qualities the prompt asks for; end with: Reply with only a number
-                   between 0 and 1.>",
+  "criteria": ["<one rule a judge can check in a reply, most important first>", ...],
   "notes": "<2-4 sentences: what you assumed and what the user should check first>"
 }
 Turn on a check only when the prompt itself states that rule. Leave lists empty when a
-check is off."""
+check is off.
+"criteria" are 4 to 8 rules, in priority order, for judging which of two replies is better:
+the instructions the prompt gives, the facts a reply must not invent, and the tone or format
+it asks for. Each must be concrete enough that two people would agree whether a reply meets
+it, and must come from the prompt, not from general taste."""
 
 
 @dataclass
@@ -65,7 +68,7 @@ class Draft:
     examples: list[dict[str, Any]]
     checks: dict[str, bool]
     rule_sources: dict[str, str]
-    judge_rubric: str
+    criteria: list[str]  # judging rules, most important first (#24)
     notes: str
     generator: str
     usage: Usage = field(default_factory=lambda: Usage(prompt_tokens=0, completion_tokens=0))
@@ -173,16 +176,22 @@ def generate(
     checks = {k: bool(checks_raw.get(k)) for k in ("must_mention", "json_keys", "length")}
     sources_value = raw.get("rule_sources")
     sources_raw: dict[str, Any] = sources_value if isinstance(sources_value, dict) else {}
-    rubric = str(raw.get("judge_rubric") or "").strip()[:3000] or (
-        "Rate how well this reply follows the assistant's instructions and helps the user, "
-        "from 0 (not at all) to 1 (fully). Reply with only a number between 0 and 1."
-    )
+    criteria = [c.lstrip("0123456789.) -").strip() for c in _strings(raw.get("criteria"), 8)]
+    criteria = [c[:400] for c in criteria if c]
+    if not criteria and str(raw.get("judge_rubric") or "").strip():  # older reply shape
+        criteria = [str(raw["judge_rubric"]).strip()[:3000]]
+    if not criteria:
+        criteria = [
+            "Follows the assistant's instructions.",
+            "Invents no facts the prompt or the request does not give.",
+            "Answers what the user asked, completely and clearly.",
+        ]
     usage_obj = getattr(response, "usage", None)
     return Draft(
         examples=examples,
         checks=checks,
         rule_sources={k: str(sources_raw.get(k) or "")[:300] for k in checks},
-        judge_rubric=rubric,
+        criteria=criteria,
         notes=str(raw.get("notes") or "").strip()[:1500],
         generator=model,
         usage=Usage(
@@ -222,8 +231,29 @@ def _dataset_rows(draft: Draft, seeded_ids: list[str] | None) -> list[dict[str, 
     return rows
 
 
+def _criteria_md(draft: Draft, name: str, prompt_label: str) -> str:
+    rules = "\n".join(f"{i}. {c}" for i, c in enumerate(draft.criteria, 1))
+    return f"""{DRAFT_LINE}
+# Criteria: {name}
+
+<!--
+How a judge decides which answer is better for {prompt_label}, most important
+rule first. Drafted by {draft.generator} from the prompt: rewrite it in your own
+words, add what only you know (your users, your domain, what a bad answer
+costs you), delete what does not matter. The pairwise judge and the
+follows_instructions scorer both read this file, so an edit here changes both.
+-->
+
+{rules}
+"""
+
+
 def _eval_py(
-    draft: Draft, eval_model: str, base_url: str | None = None, judge_model: str | None = None
+    draft: Draft,
+    eval_model: str,
+    base_url: str | None = None,
+    judge_model: str | None = None,
+    name: str = "bootstrapped",
 ) -> str:
     stock = []
     if draft.checks["must_mention"]:
@@ -257,21 +287,23 @@ you care about, delete the rest, then delete the DRAFT line at the top.
 
 from pathlib import Path
 
-from prompteval import Eval, llm_judge, scorer
+from prompteval import Eval, criteria_rubric, llm_judge, scorer
 {imports}
 {judge_setup}
-# The judge rubric, as drafted from your prompt. Edit freely.
-RUBRIC = {json.dumps(draft.judge_rubric)}
+# Your judging rules live in criteria/{name}.md (run prompteval from the folder
+# that holds criteria/). Edit that file, not this one.
+CRITERIA = {json.dumps(name)}
 
 
 @scorer
 def follows_instructions(output: str) -> float:
-    """LLM judge for the subjective parts of the prompt (tone, helpfulness)."""
-    return llm_judge(rubric=RUBRIC, text=output{judge_args})
+    """LLM judge: scores the reply against criteria/{name}.md."""
+    return llm_judge(rubric=criteria_rubric(CRITERIA), text=output{judge_args})
 
 
 eval = Eval(
-    name="bootstrapped",
+    name={json.dumps(name)},
+    criteria=CRITERIA,
     dataset=str(Path(__file__).parent / "dataset.jsonl"),
     scorers=[{scorers}],
     model={json.dumps(eval_model)},{base_url_line}
@@ -279,7 +311,9 @@ eval = Eval(
 '''
 
 
-def _notes_md(draft: Draft, cost: float | None, n_rows: int, seeded: bool) -> str:
+def _notes_md(
+    draft: Draft, cost: float | None, n_rows: int, seeded: bool, criteria_path: str = ""
+) -> str:
     def line(check: str, label: str, scorer: str) -> str:
         if not draft.checks[check]:
             return f"- **{label}**: not used (the prompt does not state this rule)."
@@ -302,7 +336,8 @@ def _notes_md(draft: Draft, cost: float | None, n_rows: int, seeded: bool) -> st
 {line("must_mention", "Required phrases", "mentions_required_terms")}
 {line("json_keys", "JSON keys", "json_schema_valid")}
 {line("length", "Length limits", "length_between")}
-- **Subjective quality** → `follows_instructions`, an LLM judge with the rubric in `eval.py`.
+- **Your judging rules** → `{criteria_path}`, read by the `follows_instructions` scorer and
+  by `compare --pairwise`.
 
 ## The generator's notes
 
@@ -312,8 +347,8 @@ def _notes_md(draft: Draft, cost: float | None, n_rows: int, seeded: bool) -> st
 
 1. Read ten examples in `dataset.jsonl`: are these things your users send?
 2. Check each `must_mention` list: would a good reply always say that?
-3. Read the rubric in `eval.py`: is that what you mean by a good reply?
-4. Delete the DRAFT line at the top of all three files.
+3. Rewrite `{criteria_path}` in your own words: is that what you mean by a better answer?
+4. Delete the DRAFT line at the top of all four files.
 """
 
 
@@ -327,8 +362,17 @@ def write_files(
     force: bool = False,
     base_url: str | None = None,
     judge_model: str | None = None,
+    name: str = "bootstrapped",
+    criteria_dir: Path | None = None,
+    prompt_label: str = "this prompt",
 ) -> list[Path]:
-    paths = [out_dir / "dataset.jsonl", out_dir / "eval.py", out_dir / "BOOTSTRAP.md"]
+    criteria_path = (criteria_dir or CRITERIA_DIR) / f"{name}.md"
+    paths = [
+        out_dir / "dataset.jsonl",
+        out_dir / "eval.py",
+        out_dir / "BOOTSTRAP.md",
+        criteria_path,
+    ]
     existing = [p for p in paths if p.exists()]
     if existing and not force:
         raise FileExistsError(
@@ -340,8 +384,12 @@ def write_files(
         DRAFT_LINE + "\n" + "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
         encoding="utf-8",
     )
-    paths[1].write_text(_eval_py(draft, eval_model, base_url, judge_model), encoding="utf-8")
-    paths[2].write_text(_notes_md(draft, cost, len(rows), bool(seeded_ids)), encoding="utf-8")
+    paths[1].write_text(_eval_py(draft, eval_model, base_url, judge_model, name), encoding="utf-8")
+    paths[2].write_text(
+        _notes_md(draft, cost, len(rows), bool(seeded_ids), str(criteria_path)), encoding="utf-8"
+    )
+    criteria_path.parent.mkdir(parents=True, exist_ok=True)
+    criteria_path.write_text(_criteria_md(draft, name, prompt_label), encoding="utf-8")
     return paths
 
 

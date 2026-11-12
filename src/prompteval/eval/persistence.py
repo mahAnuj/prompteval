@@ -93,6 +93,7 @@ def _result_from_dict(raw: dict[str, Any]) -> RunResult:
         params=raw.get("params") or {},
         repeats=int(raw.get("repeats", 1)),
         price_source=raw.get("price_source"),
+        criteria=raw.get("criteria"),
     )
 
 

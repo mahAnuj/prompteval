@@ -120,7 +120,9 @@ prompteval bootstrap --prompt prompts/v1.txt --from evals/dataset.jsonl   # uses
 One model call (cost shown before it runs, on your key) drafts `dataset.jsonl`
 (typical, edge and adversarial cases), `eval.py` and `BOOTSTRAP.md`. Hard rules
 your prompt states become plain code checks (required phrases, JSON keys,
-length limits); the subjective part gets one LLM-judge rubric you can edit.
+length limits); the subjective part becomes your judging rules in
+`criteria/<prompt name>.md`, drafted for you to rewrite (see the `criteria/`
+folder under step 7).
 The AI supplies only data: prompteval writes `eval.py` from a fixed template,
 so no generated code runs. Every file starts with a DRAFT line that `run`
 warns about until you delete it, invented inputs are marked synthetic (and
@@ -245,16 +247,42 @@ still give sharper, cheaper answers once you know what "good" means; pairwise
 is the way to get a first result without writing any. `sweep --pairwise` works
 the same way.
 
-**What the judge is told.** It works through a fixed checklist, in priority
-order: follows the assistant's rules; contradicts nothing and invents no facts,
-prices, policies or promises; answers what was asked; complete; clear (length
-is not quality); stays within its rules when a user tries to override them. It
-is also shown the rules the assistant was given (by default the baseline run's
-prompt), so "invented a policy" is something it can actually check. Point it
-at your real policy with `--judge-context policy.md`, and add items of your own
-with `--judge-criteria criteria.txt`. The report says what the judge was shown.
-`llm_judge` rubrics get the same ground rules ahead of your rubric: score only
-against the rubric, assume nothing that isn't there, length is not quality.
+**You decide how answers are judged: the `criteria/` folder.** Only you know
+what makes one answer better than another for your product, so write it down,
+one file per task, most important rule first:
+
+```bash
+prompteval criteria new prompt-create-kundli   # writes criteria/prompt-create-kundli.md
+```
+
+```markdown
+1. Uses only the birth details and chart data given; never guesses a placement.
+2. When the birth time is missing, says what that limits instead of filling it in.
+3. Makes no fatalistic predictions and does not push paid remedies.
+4. Explains any Sanskrit term the first time it appears.
+```
+
+Then every judge applies it:
+
+```bash
+prompteval compare v1 v2 --pairwise --criteria prompt-create-kundli
+```
+
+or set it once in `eval.py`, `Eval(..., criteria="prompt-create-kundli")`, and
+every compare and sweep uses it. A file named after the eval
+(`criteria/<eval name>.md`) is picked up without either. For a per-reply score
+against the same rules, use `llm_judge(rubric=criteria_rubric("prompt-create-kundli"), text=output)`.
+`bootstrap` drafts this file from your prompt for you to rewrite, and
+[`examples/criteria/prompt-create-kundli.md`](examples/criteria/prompt-create-kundli.md)
+is a full example.
+
+Without a criteria file the judge uses a built-in checklist: follows the
+assistant's rules; contradicts nothing and invents no facts, prices, policies
+or promises; answers what was asked; complete; clear; stays within its rules
+when a user tries to override them. Either way it sees the rules the assistant
+was given (by default the baseline run's prompt; point it at your real policy
+with `--judge-context policy.md`), it is told that length is not quality, and
+the report says whose criteria it applied and what it was shown.
 
 
 ```bash

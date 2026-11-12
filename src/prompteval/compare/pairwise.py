@@ -44,19 +44,33 @@ JUDGE_CRITERIA = (
 )
 
 
-def judge_system(extra_criteria: str | None = None) -> str:
-    """The pairwise judge's instructions: the checklist, plus any criteria of your own."""
-    lines = [
+def judge_system(criteria: str | None = None) -> str:
+    """The pairwise judge's instructions.
+
+    With `criteria` (the user's own, from a criteria file, #24) the judge
+    applies those, in the user's order; without, the built-in checklist.
+    Either way the ground rules stay: only the information given, earlier
+    items outweigh later ones, length is not quality.
+    """
+    head = (
         "You are a strict, fair evaluator comparing two answers (A and B) an assistant gave "
-        "to the same request. Judge them only against the checklist below, in priority "
-        "order, using only the information you are given. A failure on an earlier item "
-        "outweighs strengths on later ones.",
-        "",
-        "Checklist:",
-        *JUDGE_CRITERIA,
-    ]
-    if extra_criteria and extra_criteria.strip():
-        lines += ["", "Additional criteria from the user (apply them too):", extra_criteria.strip()]
+        "to the same request. Judge them only against the {what} below, in priority order, "
+        "using only the information you are given. A failure on an earlier item outweighs "
+        "strengths on later ones."
+    )
+    if criteria and criteria.strip():
+        lines = [
+            head.format(what="criteria"),
+            "",
+            "Criteria (written by the person who owns this assistant):",
+            criteria.strip(),
+            "",
+            "Where these criteria do not separate the answers, prefer the one that follows the "
+            "assistant's instructions and invents nothing. Length is not quality: never prefer "
+            "an answer for being longer.",
+        ]
+    else:
+        lines = [head.format(what="checklist"), "", "Checklist:", *JUDGE_CRITERIA]
     lines += [
         "",
         "If both answers are equally good or equally flawed, the result is a tie. "
@@ -78,6 +92,7 @@ class PairwiseResult:
     unreadable: int  # judge replies that were not A, B or TIE (counted as ties)
     cost: float | None  # None when the judge model has no known price
     shown: str = ""  # what the judge was given as the assistant's rules
+    judged_by: str = ""  # whose criteria it applied
 
 
 def default_judge(run_a: RunResult, run_b: RunResult) -> str:
@@ -154,12 +169,14 @@ def judge_pairwise(
     concurrency: int = 4,
     context: str | None = None,
     criteria: str | None = None,
+    criteria_label: str | None = None,
 ) -> PairwiseResult:
     """Judge every example both runs answered without error.
 
     `context` is the rules the assistant had to follow; by default the baseline
     run's prompt, so the judge knows the policies it is checking against (#23).
-    `criteria` adds the user's own items to the checklist.
+    `criteria` is the user's own judging rules (a criteria file's text); they
+    replace the built-in checklist. `criteria_label` names it in the report.
     """
     rules = context if context is not None else run_a.prompt_text
     system = judge_system(criteria)
@@ -204,10 +221,16 @@ def judge_pairwise(
         else "no rules (the baseline run saved no prompt)"
     )
     if criteria and criteria.strip():
-        shown += " and your extra criteria"
+        judged_by = f"your criteria ({criteria_label})" if criteria_label else "your criteria"
+    else:
+        judged_by = (
+            "the built-in 6-point checklist (rules first, then accuracy, relevance, "
+            "completeness, clarity, resisting overrides)"
+        )
     return PairwiseResult(
         model=judge,
         shown=shown,
+        judged_by=judged_by,
         scores={ex_id: score for ex_id, score, *_ in results},
         judged=len(results),
         order_disagreements=sum(1 for _, _, disagreed, _, _ in results if disagreed),
@@ -243,9 +266,8 @@ def pairwise_notes(result: PairwiseResult, run_a: RunResult, run_b: RunResult) -
         f"Pairwise judge {result.model}: {result.judged} examples judged twice with the answers "
         f"swapped; {result.order_disagreements} disagreed between orders and count as ties. "
         f"Judge cost {cost}. {PAIRWISE_SCORER}: 1 = {run_b.tag} better, 0.5 = tie, "
-        f"0 = {run_a.tag} better. The judge used a 6-point checklist (rules first, then "
-        f"accuracy, relevance, completeness, clarity, resisting overrides) and was shown "
-        f"{result.shown or 'no rules'}."
+        f"0 = {run_a.tag} better. The judge applied {result.judged_by or 'the built-in checklist'} "
+        f"and was shown {result.shown or 'no rules'}."
     ]
     if result.unreadable:
         notes.append(f"{result.unreadable} judge replies were not A, B or TIE and count as ties.")

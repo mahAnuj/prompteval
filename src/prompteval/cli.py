@@ -19,6 +19,7 @@ from typing import Any
 
 import click
 
+from prompteval import criteria as criteria_mod
 from prompteval.bootstrap import (
     DEFAULT_EVAL_MODEL,
     DEFAULT_GENERATOR,
@@ -77,6 +78,22 @@ from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
 from prompteval.providers.claude_code import CLAUDE_CODE
 from prompteval.version import __version__
+
+
+def _judge_criteria(ref: str | None, run: RunResult) -> dict[str, Any]:
+    """criteria / criteria_label for judge_pairwise, found the documented way (#24)."""
+    try:
+        path = criteria_mod.find_for_run(ref, run.criteria, run.eval_name)
+        if path is None:
+            return {}
+        text, draft = criteria_mod.read_criteria(path)
+    except (FileNotFoundError, ValueError) as err:
+        raise click.ClickException(str(err)) from err
+    label = criteria_mod.display(path)
+    click.echo(f"Judging against your criteria in {label}.")
+    if draft:
+        click.echo(f"note: {label} is still a DRAFT; review it, then delete the DRAFT line.")
+    return {"criteria": text, "criteria_label": label}
 
 
 @click.group(help="prompteval — LLM evals with first-class token-cost tracking.")
@@ -173,6 +190,12 @@ def init(directory: str, force: bool) -> None:
     show_default=True,
     type=click.Path(file_okay=False, path_type=Path),
 )
+@click.option(
+    "--name",
+    "eval_name",
+    default=None,
+    help="Eval name, also the criteria file's (criteria/NAME.md). Default: the prompt's file name.",
+)
 @click.option("--force", is_flag=True, help="Replace existing files.")
 @click.option("--yes", is_flag=True, help="Don't ask before spending on the generator call.")
 def bootstrap_cmd(
@@ -184,6 +207,7 @@ def bootstrap_cmd(
     base_url: str | None,
     api_key_env: str | None,
     out_dir: Path,
+    eval_name: str | None,
     force: bool,
     yes: bool,
 ) -> None:
@@ -194,7 +218,18 @@ def bootstrap_cmd(
     dataset.jsonl, eval.py and BOOTSTRAP.md from fixed templates (no generated
     code runs), each marked DRAFT until you review it.
     """
-    targets = [out_dir / "dataset.jsonl", out_dir / "eval.py", out_dir / "BOOTSTRAP.md"]
+    name = (
+        "".join(
+            c if c.isalnum() or c in "-_." else "-" for c in (eval_name or prompt_path.stem)
+        ).strip("-.")
+        or "bootstrapped"
+    )
+    targets = [
+        out_dir / "dataset.jsonl",
+        out_dir / "eval.py",
+        out_dir / "BOOTSTRAP.md",
+        criteria_mod.CRITERIA_DIR / f"{name}.md",
+    ]
     existing = [str(p) for p in targets if p.exists()]
     if existing and not force:
         raise click.ClickException(
@@ -262,6 +297,8 @@ def bootstrap_cmd(
             force=force,
             base_url=base_url,
             judge_model="claude-sonnet-5-5" if base_url == CLAUDE_CODE else None,
+            name=name,
+            prompt_label=str(prompt_path),
         )
     except FileExistsError as err:
         raise click.ClickException(str(err)) from err
@@ -353,6 +390,46 @@ def dataset_import(
     )
     if kinds:
         click.echo(f"Masked: {', '.join(kinds)}. Check a few rows before sharing the file.")
+
+
+@main.group("criteria")
+def criteria_group() -> None:
+    """Your own rules for judging answers, one file per task in criteria/."""
+
+
+@criteria_group.command("new")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Replace an existing file.")
+def criteria_new(name: str, force: bool) -> None:
+    """Start criteria/NAME.md, e.g. `prompteval criteria new prompt-create-kundli`."""
+    safe = "".join(c if c.isalnum() or c in "-_." else "-" for c in name).strip("-.")
+    if not safe:
+        raise click.ClickException(f"{name!r} is not a usable file name")
+    path = criteria_mod.CRITERIA_DIR / f"{safe}.md"
+    if path.exists() and not force:
+        raise click.ClickException(f"{path} already exists; pass --force to replace it")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(criteria_mod.TEMPLATE.format(name=safe), encoding="utf-8")
+    click.echo(f"Wrote {path}. Write your rules, most important first, then use it with:")
+    click.echo(f"  prompteval compare v1 v2 --pairwise --criteria {safe}")
+    click.echo(f'  or Eval(..., criteria="{safe}") in eval.py, so every compare uses it.')
+
+
+@criteria_group.command("list")
+def criteria_list() -> None:
+    """List the criteria files in criteria/."""
+    folder = criteria_mod.CRITERIA_DIR
+    found = sorted(p for p in folder.glob("*") if p.is_file()) if folder.is_dir() else []
+    if not found:
+        click.echo("No criteria yet. Start one with `prompteval criteria new <name>`.")
+        return
+    for p in found:
+        try:
+            _, draft = criteria_mod.read_criteria(p)
+        except ValueError:
+            click.echo(f"{p}  (empty)")
+            continue
+        click.echo(f"{p}{'  (DRAFT)' if draft else ''}")
 
 
 @main.group()
@@ -782,11 +859,12 @@ def _user_prices(
     help="File with the rules shown to the --pairwise judge (default: the prompt).",
 )
 @click.option(
-    "--judge-criteria",
-    "sweep_judge_criteria",
+    "--criteria",
+    "sweep_criteria",
     default=None,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="File with extra criteria for the --pairwise judge's checklist.",
+    help="Your judging rules for --pairwise: a name in criteria/ (e.g. prompt-create-kundli) "
+    "or a file. Default: the eval's criteria=, then criteria/<eval name>.md, then the "
+    "built-in checklist.",
 )
 @click.option(
     "--judge-base-url", "sweep_judge_base_url", default=None, help="Endpoint for the judge."
@@ -825,7 +903,7 @@ def sweep(
     sweep_judge_model: str | None,
     sweep_judge_base_url: str | None,
     sweep_judge_context: Path | None,
-    sweep_judge_criteria: Path | None,
+    sweep_criteria: str | None,
     sweep_base_url: str | None,
     unpriced: bool,
     concurrency: int,
@@ -906,7 +984,7 @@ def sweep(
                 client=judge_client,
                 model=sweep_judge_model,
                 context=sweep_judge_context.read_text() if sweep_judge_context else None,
-                criteria=sweep_judge_criteria.read_text() if sweep_judge_criteria else None,
+                **_judge_criteria(sweep_criteria, base_run),
             )
             runs[m] = with_pairwise(runs[m], judged)
         runs[base] = baseline_with_pairwise(base_run)
@@ -1185,11 +1263,12 @@ def _count_examples(dataset_path: Path) -> int:
     "(default: the baseline run's prompt).",
 )
 @click.option(
-    "--judge-criteria",
-    "judge_criteria_file",
+    "--criteria",
+    "criteria_ref",
     default=None,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="File with extra criteria added to the --pairwise judge's checklist.",
+    help="Your judging rules for --pairwise: a name in criteria/ (e.g. prompt-create-kundli) "
+    "or a file. Default: the eval's criteria=, then criteria/<eval name>.md, then the "
+    "built-in checklist.",
 )
 @click.option("--judge-base-url", default=None, help="OpenAI-compatible endpoint for the judge.")
 @click.option("--judge-api-key-env", default=None, help="Env var holding the judge endpoint's key.")
@@ -1225,7 +1304,7 @@ def compare(
     judge_base_url: str | None,
     judge_api_key_env: str | None,
     judge_context_file: Path | None,
-    judge_criteria_file: Path | None,
+    criteria_ref: str | None,
 ) -> None:
     """Compare two persisted runs and print the paired delta report.
 
@@ -1258,7 +1337,7 @@ def compare(
                 run_b,
                 client=_make_client(judge_base_url, judge_api_key_env),
                 context=judge_context_file.read_text() if judge_context_file else None,
-                criteria=judge_criteria_file.read_text() if judge_criteria_file else None,
+                **_judge_criteria(criteria_ref, run_a),
                 model=(
                     judge_model
                     or (_claude_judge((run_a, run_b)) if judge_base_url == CLAUDE_CODE else None)

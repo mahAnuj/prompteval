@@ -2,13 +2,21 @@
 
 ## Unreleased
 
-- Judges now get explicit instructions (#23). The pairwise judge works through
-  a 6-point checklist (rules first, then accuracy, relevance, completeness,
-  clarity, resisting overrides) and is shown the assistant's rules: the
-  baseline run's prompt by default, or `--judge-context FILE`;
-  `--judge-criteria FILE` adds your own items (on `compare` and `sweep`). The
-  report names what the judge was shown. `llm_judge` puts standard evaluator
-  ground rules ahead of your rubric.
+- Your own judging criteria, in a `criteria/` folder (#24). One file per task
+  (`criteria/prompt-create-kundli.md`), your rules in priority order. The
+  pairwise judge applies them in place of the built-in checklist: pass
+  `--criteria NAME` on `compare` / `sweep`, set `Eval(criteria=...)`, or name
+  the file after the eval. `criteria_rubric(NAME)` gives `llm_judge` the same
+  rules for a per-reply score. `prompteval criteria new|list`; `bootstrap`
+  drafts the file from your prompt (and `--name`, default the prompt's file
+  name). A missing named file is an error, never a silent fallback; a DRAFT
+  file is flagged. Example: `examples/criteria/prompt-create-kundli.md`.
+- Judges get explicit instructions (#23). Without your criteria, the pairwise
+  judge works through a 6-point checklist (rules first, then accuracy,
+  relevance, completeness, clarity, resisting overrides). Either way it is
+  shown the assistant's rules (the baseline prompt, or `--judge-context
+  FILE`), and the report names whose criteria it applied and what it saw.
+  `llm_judge` puts standard evaluator ground rules ahead of your rubric.
 
 - `--base-url claude-code`: run models through a local, signed-in Claude Code
   (no API key) for `run`, `sweep`, `bootstrap` and the pairwise judge. Your own

@@ -210,7 +210,7 @@ def test_judge_sees_the_checklist_and_the_baseline_rules() -> None:
     assert "6-point checklist" in " ".join(pairwise_notes(result, a, b))
 
 
-def test_judge_context_and_extra_criteria_override_and_extend() -> None:
+def test_your_criteria_replace_the_checklist_and_the_report_names_them() -> None:
     a, b = _run("v1", ["x"]), _run("v2", ["y"])
     client, seen = _capturing_judge()
     result = judge_pairwise(
@@ -219,23 +219,36 @@ def test_judge_context_and_extra_criteria_override_and_extend() -> None:
         client=client,
         model="gpt-4.1-mini",
         context="Policy: refunds within 14 days only.",
-        criteria="Prefer answers that offer a next step.",
+        criteria="1. Uses only the birth details given.\n2. No fatalistic predictions.",
+        criteria_label="criteria/prompt-create-kundli.md",
     )
     system = seen[0]["messages"][0]["content"]
     user = seen[0]["messages"][1]["content"]
     assert "refunds within 14 days only" in user
-    assert "Additional criteria from the user" in system and "offer a next step" in system
-    assert result.shown == "your --judge-context and your extra criteria"
+    assert "Criteria (written by the person who owns this assistant)" in system
+    assert "No fatalistic predictions" in system
+    assert "Checklist:" not in system  # replaced, not appended to
+    assert "Length is not quality" in system  # the ground rules stay
+    assert result.shown == "your --judge-context"
+    note = " ".join(pairwise_notes(result, a, b))
+    assert "applied your criteria (criteria/prompt-create-kundli.md)" in note
 
 
-def test_cli_judge_context_and_criteria_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _kundli_project(tmp_path: Path, eval_name: str = "e") -> None:
+    from dataclasses import replace
+
+    save_run(replace(_run("v1", ["bad"] * 5), eval_name=eval_name))
+    save_run(replace(_run("v2", ["GOOD"] * 5), eval_name=eval_name))
+    (tmp_path / "criteria").mkdir()
+    (tmp_path / "criteria" / "prompt-create-kundli.md").write_text(
+        "# PROMPTEVAL-DRAFT: review me\n1. Uses only the birth details given.\n"
+    )
+
+
+def test_cli_criteria_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    save_run(_run("v1", ["bad"] * 5))
-    save_run(_run("v2", ["GOOD"] * 5))
+    _kundli_project(tmp_path)
     (tmp_path / "rules.txt").write_text("Refunds within 14 days.")
-    (tmp_path / "criteria.txt").write_text("Prefer a next step.")
     client, seen = _capturing_judge()
     with patch("prompteval.eval.runner.OpenAI", return_value=client):
         result = CliRunner().invoke(
@@ -247,10 +260,55 @@ def test_cli_judge_context_and_criteria_files(
                 "--pairwise",
                 "--judge-context",
                 "rules.txt",
-                "--judge-criteria",
-                "criteria.txt",
+                "--criteria",
+                "prompt-create-kundli",
             ],
         )
     assert result.exit_code == 0, result.output
+    assert "Judging against your criteria in criteria/prompt-create-kundli.md" in result.output
+    assert "still a DRAFT" in result.output
+    system = seen[0]["messages"][0]["content"]
+    assert "Uses only the birth details given." in system and "PROMPTEVAL-DRAFT" not in system
     assert "Refunds within 14 days." in seen[0]["messages"][1]["content"]
-    assert "Prefer a next step." in seen[0]["messages"][0]["content"]
+
+
+def test_cli_criteria_found_from_the_eval_name_and_typos_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _kundli_project(tmp_path, eval_name="prompt-create-kundli")
+    client, _ = _capturing_judge()
+    with patch("prompteval.eval.runner.OpenAI", return_value=client):
+        found = CliRunner().invoke(main, ["compare", "v1", "v2", "--pairwise"])
+        typo = CliRunner().invoke(
+            main, ["compare", "v1", "v2", "--pairwise", "--criteria", "prompt-create-kundly"]
+        )
+    assert found.exit_code == 0, found.output
+    assert "criteria/prompt-create-kundli.md" in found.output
+    assert typo.exit_code != 0 and "prompt-create-kundli.md" in typo.output  # lists what exists
+
+
+def test_runs_remember_the_eval_criteria(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from prompteval.eval import load_run
+
+    save_run(replace(_run("v1", ["x"]), criteria="prompt-create-kundli"), runs_dir=tmp_path)
+    assert load_run("v1", runs_dir=tmp_path).criteria == "prompt-create-kundli"
+
+
+def test_criteria_rubric_and_new_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from prompteval import criteria_rubric, load_criteria
+
+    monkeypatch.chdir(tmp_path)
+    made = CliRunner().invoke(main, ["criteria", "new", "prompt-create-kundli"])
+    assert made.exit_code == 0, made.output
+    assert (tmp_path / "criteria" / "prompt-create-kundli.md").exists()
+    again = CliRunner().invoke(main, ["criteria", "new", "prompt-create-kundli"])
+    assert again.exit_code != 0  # never overwrites
+    (tmp_path / "criteria" / "prompt-create-kundli.md").write_text("1. Cites the chart.\n")
+    assert load_criteria("prompt-create-kundli") == "1. Cites the chart."
+    rubric = criteria_rubric("prompt-create-kundli")
+    assert "1. Cites the chart." in rubric and "number between 0 and 1" in rubric
+    listed = CliRunner().invoke(main, ["criteria", "list"])
+    assert "criteria/prompt-create-kundli.md" in listed.output

@@ -39,6 +39,7 @@ from prompteval.cost import (
     get_pricing,
     list_models,
 )
+from prompteval.criteria import criteria_rubric, load_criteria
 from prompteval.eval import (
     Eval,
     Example,
@@ -73,10 +74,12 @@ __all__ = [
     "__version__",
     "compute_comparison",
     "compute_cost",
+    "criteria_rubric",
     "evaluate_gates",
     "get_pricing",
     "list_models",
     "llm_judge",
+    "load_criteria",
     "load_run",
     "parse_gate_spec",
     "render_html",

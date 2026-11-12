@@ -88,6 +88,11 @@ Things to know about judges:
   out of the cost verdict, which compares only the prompt under test.
 - **A judge is a model with its own blind spots.** Check a handful of its
   scores by hand before trusting it, and keep the rubric specific.
+- **Keep the rules in one place.** Write your judging rules in
+  `criteria/<task>.md` and score with
+  `llm_judge(rubric=criteria_rubric("<task>"), text=output)`; `compare
+  --pairwise --criteria <task>` then judges with exactly the same rules, so the
+  per-reply score and the side-by-side verdict can't drift apart.
 
 ## Binary or graded: it decides how many examples you need
 

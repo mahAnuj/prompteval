@@ -140,6 +140,7 @@ class RunResult:
     price_source: str | None = None
     params: dict[str, Any] = field(default_factory=dict)  # request settings used (#10)
     repeats: int = 1  # answers per example (#14); scores are their mean
+    criteria: str | None = None  # the eval's criteria file reference (#24)
 
     @property
     def total_cost(self) -> float:
@@ -220,6 +221,11 @@ class Eval:
     # With it, the prompt file is the system message (its own {placeholders}
     # filled too) and this, filled, is the user message.
     user_template: str | None = None
+    # Your judging rules for this task (#24): a name in `criteria/` (e.g.
+    # "prompt-create-kundli" for criteria/prompt-create-kundli.md) or a path.
+    # `compare --pairwise` judges against it. None = criteria/<name>.md if it
+    # exists, else the built-in checklist.
+    criteria: str | None = None
 
     def __post_init__(self) -> None:
         # No scorers is allowed: `compare --pairwise` judges the answers directly
@@ -521,6 +527,7 @@ def run_eval(
         base_url=effective_base_url,
         params=effective_params,
         repeats=max(1, repeats),
+        criteria=eval_def.criteria,
         price_source=(
             "reported by Claude Code (API list prices)"
             if pricing.provider == "reported"
