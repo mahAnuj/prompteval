@@ -172,3 +172,38 @@ def test_identical_prompts_rarely_get_dont_ship_with_many_scorers() -> None:
         if compute_comparison(*runs).recommendation.startswith("don't ship"):
             false_alarms += 1
     assert false_alarms / trials <= 0.05  # was 15% before the correction
+
+
+# ---------------------------------------------------------------- #7
+
+
+def test_different_evals_are_refused() -> None:
+    from dataclasses import replace
+
+    import pytest
+
+    a = _run("v1", {"q": [1.0] * 3}, [1] * 3)
+    b = replace(_run("v2", {"q": [1.0] * 3}, [1] * 3), eval_name="other")
+    with pytest.raises(ValueError, match="different evals"):
+        compute_comparison(a, b)
+
+
+def test_mismatched_dataset_models_and_ids_are_warned_about() -> None:
+    from dataclasses import replace
+
+    a = replace(_run("v1", {"q": [1.0] * 4}, [1] * 4), dataset_sha256="aaa")
+    b = replace(_run("v2", {"q": [1.0] * 3}, [1] * 3), dataset_sha256="bbb", model="gpt-4o")
+    report = compute_comparison(a, b)
+    text = render_text(report)
+    assert "different dataset files" in text
+    assert "1 example(s) only in 'v1' and 0 only in 'v2'" in text
+    assert "the models differ (gpt-4o-mini vs gpt-4o)" in text
+    assert "Models: v1=gpt-4o-mini, v2=gpt-4o" in text
+
+
+def test_matching_runs_carry_no_warnings() -> None:
+    from dataclasses import replace
+
+    a = replace(_run("v1", {"q": [1.0] * 3}, [1] * 3), dataset_sha256="same")
+    b = replace(_run("v2", {"q": [1.0] * 3}, [1] * 3), dataset_sha256="same")
+    assert compute_comparison(a, b).warnings == ()

@@ -196,7 +196,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **224/224 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **228/228 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

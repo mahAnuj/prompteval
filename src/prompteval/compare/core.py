@@ -103,6 +103,10 @@ class ComparisonReport:
     errors_a: int = 0
     errors_b: int = 0
     n_attempted: int = 0  # examples present in both runs, errored or not
+    model_a: str = ""
+    model_b: str = ""
+    # Things that make the comparison weaker than it looks (#7).
+    warnings: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +451,13 @@ def compute_comparison(
     Raises ValueError if fewer than 2 paired examples are available — bootstrap
     + t-test are undefined below that and silently producing zeros would mislead.
     """
+    if run_a.eval_name != run_b.eval_name:
+        raise ValueError(
+            f"Cannot compare {run_a.tag!r} vs {run_b.tag!r}: they come from different evals "
+            f"({run_a.eval_name!r} and {run_b.eval_name!r}), so their scores mean different things."
+        )
+    warnings = _compatibility_warnings(run_a, run_b)
+
     common_ids, idx_a, idx_b = _pair_examples(run_a, run_b)
     n = len(common_ids)
     if n < 2:
@@ -512,7 +523,34 @@ def compute_comparison(
         errors_a=int(errs_a.sum()),
         errors_b=int(errs_b.sum()),
         n_attempted=len(attempted),
+        model_a=run_a.model,
+        model_b=run_b.model,
+        warnings=warnings,
     )
+
+
+def _compatibility_warnings(run_a: RunResult, run_b: RunResult) -> tuple[str, ...]:
+    out: list[str] = []
+    ha, hb = run_a.dataset_sha256, run_b.dataset_sha256
+    if ha and hb and ha != hb:
+        out.append(
+            "the two runs used different dataset files; only examples with matching ids "
+            "are compared, and a matching id may not be the same example"
+        )
+    ids_a = {e.id for e in run_a.examples}
+    ids_b = {e.id for e in run_b.examples}
+    only_a, only_b = len(ids_a - ids_b), len(ids_b - ids_a)
+    if only_a or only_b:
+        out.append(
+            f"{only_a} example(s) only in {run_a.tag!r} and {only_b} only in {run_b.tag!r} "
+            "were left out"
+        )
+    if run_a.model != run_b.model:
+        out.append(
+            f"the models differ ({run_a.model} vs {run_b.model}): this compares the model "
+            "change and any prompt change together"
+        )
+    return tuple(out)
 
 
 def _count_errors(run: RunResult) -> int:
@@ -552,6 +590,10 @@ def render_text(report: ComparisonReport) -> str:
     lines: list[str] = []
     lines.append(f"=== {report.tag_a} vs {report.tag_b} ===")
     lines.append(f"Paired examples: {report.n_paired}")
+    if report.model_a or report.model_b:
+        lines.append(f"Models: {report.tag_a}={report.model_a}, {report.tag_b}={report.model_b}")
+    for w in report.warnings:
+        lines.append(f"Warning: {w}")
     if report.error_delta is not None:
         lines.append(
             f"Errors: {report.errors_a} in {report.tag_a}, {report.errors_b} in {report.tag_b} "
@@ -670,6 +712,13 @@ def render_html(report: ComparisonReport) -> str:
         if report.error_delta is not None
         else ""
     )
+    models_meta = (
+        f" &middot; models: {_h(report.tag_a)}={_h(report.model_a)}, "
+        f"{_h(report.tag_b)}={_h(report.model_b)}"
+        if report.model_a or report.model_b
+        else ""
+    )
+    warnings_html = "".join(f'<p class="warn">Warning: {_h(w)}</p>' for w in report.warnings)
     error_row = (
         _html_scorer_row(report.error_delta, lower_is_better=True)
         if report.error_delta is not None
@@ -722,12 +771,14 @@ def render_html(report: ComparisonReport) -> str:
   .rec.ship {{ background: #d8f0de; color: #0a5e1f; }}
   .rec.dont-ship {{ background: #fad9dc; color: #8a131c; }}
   .rec.inconclusive {{ background: #fff3cd; color: #6e5005; }}
+  .warn {{ background: #fff3cd; color: #6e5005; padding: 0.5rem 0.75rem; border-radius: 4px; }}
   footer {{ color: #999; font-size: 0.8rem; margin-top: 2rem; }}
 </style>
 </head>
 <body>
 <h1>{_h(report.tag_a)} vs {_h(report.tag_b)}</h1>
-<div class="meta">Paired examples: {report.n_paired}{errors_meta}</div>
+<div class="meta">Paired examples: {report.n_paired}{errors_meta}{models_meta}</div>
+{warnings_html}
 
 <table>
 <thead>

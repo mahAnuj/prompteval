@@ -26,6 +26,7 @@ don't force a shape change. See IMPLEMENTATION_PLAN.md.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable
@@ -104,6 +105,9 @@ class RunResult:
     started_at: str
     finished_at: str
     examples: list[ExampleResult]
+    # sha256 of the dataset file, so `compare` can tell whether two runs saw
+    # the same examples (#7). None for runs saved before it was recorded.
+    dataset_sha256: str | None = None
 
     @property
     def total_cost(self) -> float:
@@ -312,6 +316,7 @@ def run_eval(
         started_at=started_at,
         finished_at=finished_at,
         examples=results,
+        dataset_sha256=hashlib.sha256(Path(eval_def.dataset).read_bytes()).hexdigest(),
     )
 
 

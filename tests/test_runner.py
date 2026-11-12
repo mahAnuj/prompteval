@@ -458,3 +458,29 @@ def test_latency_excludes_scorer_time(tmp_path: Path) -> None:
         client=_mock_openai_client(),
     )
     assert result.examples[0].latency_s < 0.1
+
+
+def test_run_records_dataset_fingerprint_and_it_survives_reload(tmp_path: Path) -> None:
+    # #7: compare needs to know whether two runs saw the same dataset.
+    import hashlib
+    import json as _json
+
+    from prompteval.eval import load_run, save_run
+
+    dataset = _write_dataset(tmp_path, [{"id": "a", "input": "hi"}])
+    prompt = _write_prompt(tmp_path)
+    result = run_eval(
+        Eval(name="e", dataset=dataset, scorers=[always_one]),
+        prompt_path=prompt,
+        tag="t",
+        client=_mock_openai_client(),
+    )
+    assert result.dataset_sha256 == hashlib.sha256(dataset.read_bytes()).hexdigest()
+    path = save_run(result, runs_dir=tmp_path / "runs")
+    assert load_run("t", runs_dir=tmp_path / "runs").dataset_sha256 == result.dataset_sha256
+
+    # A run saved before the field existed still loads.
+    raw = _json.loads(path.read_text())
+    del raw["dataset_sha256"]
+    path.write_text(_json.dumps(raw))
+    assert load_run("t", runs_dir=tmp_path / "runs").dataset_sha256 is None
