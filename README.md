@@ -250,13 +250,39 @@ it says so rather than guessing.
 
 ### 8. (Optional but the moat) Lock it into CI
 
-A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml). The core of it:
+Add the Action, and every pull request that changes the prompt gets the report
+as a comment, verdict first:
 
 ```yaml
-- run: prompteval run --prompt /tmp/baseline.txt --tag baseline
-- run: prompteval run --prompt evals/prompts/v1.txt --tag candidate
-- run: prompteval compare baseline candidate --html report.html --fail-on cost+10%,quality-5%
+# .github/workflows/prompteval.yml
+on:
+  pull_request:
+    paths: ["evals/**"]
+permissions:
+  contents: read
+  pull-requests: write      # to post the comment
+jobs:
+  prompteval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mahAnuj/prompteval@v1
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          prompt: evals/prompts/v1.txt
+          fail-on: cost+10%,quality-5%
 ```
+
+It runs the PR base's version of the prompt and the head version on the same
+eval, posts **one** comment that it updates on every push, and writes the same
+report to the job summary. An unchanged prompt costs nothing: no runs are made.
+Set `models: gpt-4o,gpt-4o-mini` instead to post a model sweep. Other inputs:
+`eval-file`, `margin`, `baseline-ref`, `comment: false`. Pull requests from
+forks get no secrets, so the runs fail there by design.
+
+Prefer plain steps? [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml)
+does the same with `prompteval run` and `compare --markdown` (or `--html`).
 
 Any future prompt change gets gated. PR fails if cost *could* have risen more
 than 10%, or any scorer *could* have dropped more than 5 percentage points,
@@ -281,7 +307,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **274/274 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **281/281 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

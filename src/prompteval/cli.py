@@ -22,6 +22,7 @@ from prompteval.compare import (
     evaluate_gates,
     parse_gate_spec,
     render_html,
+    render_markdown,
     render_text,
 )
 from prompteval.compare.gates import GateSpecError
@@ -627,6 +628,13 @@ def _count_examples(dataset_path: Path) -> int:
     help="Also write a single-file HTML report to this path.",
 )
 @click.option(
+    "--markdown",
+    "markdown_path",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write the report as Markdown (for a PR comment or a job summary).",
+)
+@click.option(
     "--fail-on",
     "fail_on",
     default=None,
@@ -661,6 +669,7 @@ def compare(
     fail_on: str | None,
     gate_mode: str,
     margin: float,
+    markdown_path: Path | None,
 ) -> None:
     """Compare two persisted runs and print the paired delta report.
 
@@ -696,6 +705,10 @@ def compare(
         html_path.write_text(render_html(report), encoding="utf-8")
         click.echo("")
         click.echo(f"HTML report: {html_path}")
+
+    if markdown_path is not None:
+        markdown_path.write_text(render_markdown(report), encoding="utf-8")
+        click.echo(f"Markdown report: {markdown_path}")
 
     if clauses is not None:
         breaches = evaluate_gates(report, clauses, mode=gate_mode)

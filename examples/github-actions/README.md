@@ -1,5 +1,9 @@
 # GitHub Actions example workflow
 
+> The quickest route is the published Action, `uses: mahAnuj/prompteval@v1`,
+> which also posts the report as a PR comment. See the main README, step 8.
+> This folder shows the same thing as plain workflow steps.
+
 Drop [`prompteval.yml`](./prompteval.yml) into your repo at
 `.github/workflows/prompteval.yml` to run prompteval on every PR that touches
 `evals/`.

@@ -1,0 +1,60 @@
+name: prompteval
+description: Cost and quality report for prompt changes, posted on the pull request.
+author: Anuj Mahajan
+branding:
+  icon: bar-chart-2
+  color: blue
+
+inputs:
+  prompt:
+    description: Path to the prompt file to evaluate, e.g. evals/prompts/v1.txt.
+    required: true
+  eval-file:
+    description: Path to the eval definition.
+    default: evals/eval.py
+  fail-on:
+    description: CI gate, e.g. "cost+10%,quality-5%". Empty = report only, never fail.
+    default: ""
+  margin:
+    description: Largest scorer drop (0-1) still counted as "quality holds".
+    default: ""
+  models:
+    description: Comma-separated models. When set, runs a sweep instead of a base-vs-head comparison.
+    default: ""
+  baseline-ref:
+    description: Git ref holding the baseline prompt. Default is the PR's base commit.
+    default: ""
+  comment:
+    description: Post (and keep updating) one PR comment with the report.
+    default: "true"
+  python-version:
+    description: Python used to run prompteval.
+    default: "3.12"
+  github-token:
+    description: Token used to post the comment (needs pull-requests write).
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install prompteval (the version of this action)
+      shell: bash
+      run: python -m pip install --quiet "${{ github.action_path }}"
+    - name: Evaluate and report
+      shell: bash
+      env:
+        INPUT_PROMPT: ${{ inputs.prompt }}
+        INPUT_EVAL_FILE: ${{ inputs.eval-file }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_MARGIN: ${{ inputs.margin }}
+        INPUT_MODELS: ${{ inputs.models }}
+        INPUT_BASELINE_REF: ${{ inputs.baseline-ref }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "${{ github.action_path }}/action/run.sh"

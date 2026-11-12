@@ -14,6 +14,7 @@ from prompteval.compare.core import (
     MetricDelta,
     compute_comparison,
     render_html,
+    render_markdown,
     render_text,
 )
 from prompteval.compare.gates import (
@@ -34,5 +35,6 @@ __all__ = [
     "evaluate_gates",
     "parse_gate_spec",
     "render_html",
+    "render_markdown",
     "render_text",
 ]
