@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-11-12
 
 - `.env` and `evals/.env` are now read at startup, as `prompteval init` always
   said to do; nothing loaded them before, so a key placed there gave an
