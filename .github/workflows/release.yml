@@ -10,7 +10,9 @@ name: release
 #
 # Release: bump src/prompteval/version.py and pyproject.toml, then
 #   git tag v0.2.0 && git push origin v0.2.0
-# major-tag.yml then moves the Action's v1 tag to it automatically.
+# The docs pin the Action to exact release tags (@v0.2.1). A moving v1 tag
+# would have to be pushed by hand: GitHub refuses the workflow token the
+# `workflows` permission needed to create a tag containing workflow files.
 
 # Only full version tags (v0.2.0). The Action's moving major tag (v1) also
 # starts with "v" and must not trigger a release.

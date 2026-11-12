@@ -1,6 +1,6 @@
 # GitHub Actions example workflow
 
-> The quickest route is the published Action, `uses: mahAnuj/prompteval@v1`,
+> The quickest route is the published Action, `uses: mahAnuj/prompteval@v0.2.1`,
 > which also posts the report as a PR comment. See the main README, step 8.
 > This folder shows the same thing as plain workflow steps.
 

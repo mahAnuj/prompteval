@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Docs pin the Action to a release tag (`@v0.2.1`). The `@v1` they showed
+  was never created: GitHub refuses the workflow token permission to create
+  a tag that contains workflow files, so a moving major tag needs a manual
+  push. The workflow that tried to move it is removed.
+
 ## 0.2.1 — 2026-11-12
 
 - `.env` and `evals/.env` are now read at startup, as `prompteval init` always
@@ -46,7 +53,7 @@
   losing quality, in one table; re-runs reuse saved results (#9).
 - **Prompt templates** with `{variables}`, a `user_template`, and request
   settings (`params`, `--param temperature=0`) (#10).
-- **GitHub Action** (`uses: mahAnuj/prompteval@v1`) posting one PR comment,
+- **GitHub Action** (`uses: mahAnuj/prompteval@v0.2.0`) posting one PR comment,
   updated on every push (#12); `compare --markdown`.
 - **Parallel runs** (`--concurrency`, default 4) with more retries (#13).
 - **Noise**: `--repeats`, a temperature-0 judge, `prompteval noise` (#14).

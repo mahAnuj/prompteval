@@ -305,13 +305,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mahAnuj/prompteval@v1
+      - uses: mahAnuj/prompteval@v0.2.1
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           prompt: evals/prompts/v1.txt
           fail-on: cost+10%,quality-5%
 ```
+
+Pin a release tag (`@v0.2.1`, or whatever is newest on the releases page);
+bump it when you want a newer version.
 
 It runs the PR base's version of the prompt and the head version on the same
 eval, posts **one** comment that it updates on every push, and writes the same
