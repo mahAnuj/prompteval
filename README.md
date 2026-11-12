@@ -319,6 +319,31 @@ pass `--unpriced`: then it runs, token counts are recorded, and `compare` and
 fails rather than passing on $0, and a sweep never names an unpriced model as
 the cheapest.
 
+### No API key? Use Claude Code
+
+If you have [Claude Code](https://claude.com/claude-code) installed and signed
+in, prompteval can run models through it, on your own login and plan, with no
+API key:
+
+```bash
+prompteval bootstrap --prompt prompts/v1.txt --base-url claude-code   # Sonnet drafts, Haiku runs
+prompteval run --prompt prompts/v1.txt --tag v1 --eval-file evals/eval.py
+prompteval compare v1 v2 --pairwise --judge-base-url claude-code
+```
+
+Each call is `claude -p` with your prompt as the system prompt and tools off
+(measured: $0.00027 for a short reply, against $0.087 with Claude Code's own
+setup), run from an empty temporary folder so a project `CLAUDE.md` can't leak
+into the answers. Costs are the figures Claude Code reports per call (API list
+prices; on a subscription, usage against your plan). Worth knowing:
+
+- Claude models only, and slower than an API (a process per call).
+- Each call carries a small fixed overhead (cache writes), so absolute costs
+  are higher than the API and a shorter prompt saves proportionally less.
+- No temperature setting; use `--repeats` if answers vary.
+- A user-level `~/.claude/CLAUDE.md` still applies; keep it out of eval
+  machines.
+
 ### Which model is cheapest for this prompt?
 
 ```bash
@@ -411,7 +436,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**326/326 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**333/333 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

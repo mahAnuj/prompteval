@@ -274,6 +274,11 @@ def _build_mean_delta(
         dec_low, dec_high = _percentile_ci(
             _small_sample_widen(dist, len(diffs), decision_level), decision_level
         )
+        # The widening must not reach past what was observed: if no example got
+        # worse, it cannot claim a drop is plausible. Found in a real run, where
+        # a metric that only improved (+1 on one example of 8) was called unclear.
+        dec_low = max(dec_low, float(diffs.min()))
+        dec_high = min(dec_high, float(diffs.max()))
         p = _bootstrap_p(dist)
     else:
         ci_low = ci_high = dec_low = dec_high = float(diffs.mean())
@@ -436,10 +441,15 @@ def _make_verdicts(
 
     if unclear:
         names = ", ".join(_metric_label(d, lib) for d, lib in unclear)
-        worst = max((_bounds(d)[1] if lib else -_bounds(d)[0]) for d, lib in unclear)
-        quality_verdict = (
-            f"can't rule out a drop larger than {margin:.2f} on {names} "
-            f"(could be up to {worst:.2f} worse)"
+        drops = [
+            ((_bounds(d)[1] if lib else -_bounds(d)[0]), _metric_label(d, lib))
+            for d, lib in unclear
+        ]
+        worst, worst_name = max(drops)
+        quality_verdict = f"can't rule out a drop larger than {margin:.2f} on {names} " + (
+            f"(up to {worst:.2f} on {worst_name})"
+            if len(drops) > 1
+            else f"(up to {worst:.2f} worse)"
         )
         needed = [_examples_needed(d, n, margin, lib) for d, lib in unclear]
         if all(x is not None for x in needed):
@@ -447,7 +457,15 @@ def _make_verdicts(
             advice = f"about {target} examples would settle it (you have {n})"
         else:
             advice = "the measured drop is already beyond the margin; add examples to confirm"
-        recommendation = f"inconclusive — {names} could be up to {worst:.2f} worse; {advice}"
+        recommendation = (
+            f"inconclusive — {worst_name} could be up to {worst:.2f} worse"
+            + (
+                f" (also unclear: {', '.join(n for _, n in drops if n != worst_name)})"
+                if len(drops) > 1
+                else ""
+            )
+            + f"; {advice}"
+        )
         return quality_verdict, cost_verdict, recommendation
 
     quality_verdict = f"holds — no metric can have dropped by more than {margin:.2f}"

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `--base-url claude-code`: run models through a local, signed-in Claude Code
+  (no API key) for `run`, `sweep`, `bootstrap` and the pairwise judge. Your own
+  system prompt replaces Claude Code's, tools are off, calls run in an empty
+  temporary folder (a CLAUDE.md there overrode the eval prompt in testing),
+  and cost is Claude Code's own per-call figure.
+- Found by the first real end-to-end run (bootstrap, two runs, compare,
+  pairwise, through Claude Code):
+  - `mentions_required_terms` matched literally: replies saying "within 30
+    days of delivery" scored 0 against "30-day". It now ignores case, hyphens,
+    dashes and spacing (0.62 → 1.00 on the same saved replies).
+  - The small-sample widening could call a metric "possibly worse" when no
+    example got worse; decision bounds now stay within the observed
+    differences.
+  - "X, Y, Z could be up to 0.53 worse" named three metrics for one metric's
+    limit; the message now names the metric the limit belongs to.
 - `prompteval bootstrap`: an AI-drafted dataset (typical, edge, adversarial)
   and eval for you to review. Hard rules in the prompt become stock code
   checks, the subjective part one editable judge rubric; the generator returns

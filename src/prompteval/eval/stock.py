@@ -124,7 +124,11 @@ def json_schema_valid(output: str, expected: dict[str, Any]) -> float:
 
 @scorer
 def mentions_required_terms(output: str, expected: dict[str, Any]) -> float:
-    """Fraction of `expected["must_mention"]` terms found in `output` (case-insensitive).
+    """Fraction of `expected["must_mention"]` terms found in `output`.
+
+    Matching ignores case, hyphens, dashes and extra spaces, so "30-day" matches
+    "30 days" and "3-5 working days" matches the same with an en dash. Found in a real
+    run: replies saying "within 30 days of delivery" scored 0 against "30-day".
 
     expected: {"must_mention": ["term1", "term2"]}
     Returns 1.0 if no terms required (vacuously satisfied). Partial credit
@@ -134,8 +138,18 @@ def mentions_required_terms(output: str, expected: dict[str, Any]) -> float:
     must = expected.get("must_mention", [])
     if not must:
         return 1.0
-    text = output.lower()
-    return sum(1 for term in must if term.lower() in text) / len(must)
+    text = _normalize_text(output)
+    return sum(1 for term in must if _normalize_text(str(term)) in text) / len(must)
+
+
+_SEPARATORS = re.compile(r"[\s\-\u2010-\u2015_/]+")
+
+
+def _normalize_text(s: str) -> str:
+    """Lowercase; hyphens, dashes, underscores, slashes and runs of space become one space."""
+    # Plain substring after normalising, deliberately not whole-word: "30 day" must
+    # match inside "30 days", and padding with spaces broke exactly that.
+    return _SEPARATORS.sub(" ", s.lower()).strip()
 
 
 # ---------------------------------------------------------------------------

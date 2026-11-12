@@ -75,7 +75,7 @@ def _parse(reply: str) -> str | None:
 
 def _ask(
     client: Any, model: str, example: ExampleResult, first: str, second: str
-) -> tuple[str | None, Usage]:
+) -> tuple[str | None, Usage, float | None]:
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -89,7 +89,12 @@ def _ask(
         prompt_tokens=int(getattr(usage_obj, "prompt_tokens", 0) or 0),
         completion_tokens=int(getattr(usage_obj, "completion_tokens", 0) or 0),
     )
-    return _parse(response.choices[0].message.content or ""), usage
+    reported = getattr(response, "reported_cost_usd", None)
+    return (
+        _parse(response.choices[0].message.content or ""),
+        usage,
+        float(reported) if isinstance(reported, (int, float)) else None,
+    )
 
 
 def judge_pairwise(
@@ -107,31 +112,35 @@ def judge_pairwise(
     by_id_a = {e.id: e for e in run_a.examples if e.error is None}
     pairs = [(by_id_a[e.id], e) for e in run_b.examples if e.error is None and e.id in by_id_a]
 
-    def one(pair: tuple[ExampleResult, ExampleResult]) -> tuple[str, float, bool, int, list[Usage]]:
+    def one(
+        pair: tuple[ExampleResult, ExampleResult],
+    ) -> tuple[str, float, bool, int, list[tuple[Usage, float | None]]]:
         a, b = pair
         # Order 1: A first. Order 2: B first. Map both to "which run won".
-        v1, u1 = _ask(client, judge, a, a.output, b.output)
-        v2, u2 = _ask(client, judge, a, b.output, a.output)
+        v1, u1, c1 = _ask(client, judge, a, a.output, b.output)
+        v2, u2, c2 = _ask(client, judge, a, b.output, a.output)
         won1 = {"A": "a", "B": "b", "TIE": "tie"}.get(v1 or "", "tie")
         won2 = {"A": "b", "B": "a", "TIE": "tie"}.get(v2 or "", "tie")
         unreadable = int(v1 is None) + int(v2 is None)
         if won1 == won2:
             score = {"b": 1.0, "a": 0.0, "tie": 0.5}[won1]
-            return a.id, score, False, unreadable, [u1, u2]
-        return a.id, 0.5, True, unreadable, [u1, u2]
+            return a.id, score, False, unreadable, [(u1, c1), (u2, c2)]
+        return a.id, 0.5, True, unreadable, [(u1, c1), (u2, c2)]
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         results = list(pool.map(one, pairs))
 
-    try:
-        pricing: ModelPricing | None = resolve_pricing(judge, prices, base_url)
-    except UnknownModelError:
-        pricing = None
+    calls = [call for *_, usages in results for call in usages]
     cost: float | None = None
-    if pricing is not None:
-        cost = sum(
-            compute_cost(judge, u, pricing).total_cost for *_, usages in results for u in usages
-        )
+    if calls and all(c is not None for _, c in calls):
+        cost = sum(c or 0.0 for _, c in calls)  # the provider reported it (Claude Code)
+    else:
+        try:
+            pricing: ModelPricing | None = resolve_pricing(judge, prices, base_url)
+        except UnknownModelError:
+            pricing = None
+        if pricing is not None:
+            cost = sum(compute_cost(judge, u, pricing).total_cost for u, _ in calls)
     return PairwiseResult(
         model=judge,
         scores={ex_id: score for ex_id, score, *_ in results},

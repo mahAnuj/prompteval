@@ -49,8 +49,9 @@ from prompteval.cost import (
     compute_cost,
     resolve_pricing,
 )
-from prompteval.eval.judge import JUDGE_CALLS
+from prompteval.eval.judge import JUDGE_CALLS, JudgeCall
 from prompteval.eval.scorer import ScorerResult, is_scorer, scorer_params
+from prompteval.providers.claude_code import CLAUDE_CODE, ClaudeCodeClient
 
 # ---------------------------------------------------------------------------
 # Data shapes
@@ -84,6 +85,9 @@ class RunnerResult:
 
     output: str
     usages: list[Usage]
+    # A cost the provider reported itself (Claude Code does), used instead of
+    # a token-based estimate when present.
+    cost_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -330,7 +334,12 @@ def default_runner(
         reasoning_tokens=reasoning,
     )
 
-    return RunnerResult(output=output, usages=[usage])
+    reported = getattr(response, "reported_cost_usd", None)
+    return RunnerResult(
+        output=output,
+        usages=[usage],
+        cost_usd=float(reported) if isinstance(reported, (int, float)) else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -391,9 +400,15 @@ def run_eval(
     try:
         pricing = resolve_pricing(effective_model, prices, effective_base_url)
     except UnknownModelError:
-        if not unpriced:
+        if effective_base_url == CLAUDE_CODE:
+            # Claude Code reports each call's cost itself, so no price table is needed.
+            pricing = REPORTED(effective_model)
+        elif not unpriced:
             raise
-        pricing = UNPRICED(effective_model)
+        else:
+            pricing = UNPRICED(effective_model)
+    if effective_base_url == CLAUDE_CODE:
+        pricing = REPORTED(effective_model)
     examples = _load_dataset(Path(eval_def.dataset))
     effective_params = {**eval_def.params, **(params or {})}
     runner: Runner = eval_def.runner or functools.partial(
@@ -420,7 +435,8 @@ def run_eval(
             call_time = 0.0
             usages: list[Usage] = []
             per_attempt: list[list[ScoreOutcome]] = []
-            judge_calls: list[tuple[str, int, int, int]] = []
+            judge_calls: list[JudgeCall] = []
+            reported: list[float | None] = []
             for attempt in range(attempts):
                 t_call = time.perf_counter()
                 runner_result = runner(example, prompt_text, effective_model, eff_client)
@@ -429,6 +445,7 @@ def run_eval(
                 if attempt == 0:
                     output = runner_result.output
                 usages.extend(runner_result.usages)
+                reported.append(runner_result.cost_usd)
                 token = JUDGE_CALLS.set(judge_calls)
                 try:
                     per_attempt.append(
@@ -440,7 +457,17 @@ def run_eval(
 
             # v1: one model per eval, so we can sum usages into one Usage and price once.
             # v1.1 (multi-model runners) will need per-call pricing — different shape.
-            cost = _per_call(compute_cost(effective_model, _sum_usages(usages), pricing), attempts)
+            if pricing.provider == "reported" and all(c is not None for c in reported):
+                cost = _per_call(
+                    _reported_cost(
+                        effective_model, _sum_usages(usages), sum(c or 0.0 for c in reported)
+                    ),
+                    attempts,
+                )
+            else:
+                cost = _per_call(
+                    compute_cost(effective_model, _sum_usages(usages), pricing), attempts
+                )
             scores = _mean_scores(per_attempt)
             judge_cost = _judge_cost(judge_calls, prices)
         except Exception as err:
@@ -495,7 +522,9 @@ def run_eval(
         params=effective_params,
         repeats=max(1, repeats),
         price_source=(
-            "unpriced"
+            "reported by Claude Code (API list prices)"
+            if pricing.provider == "reported"
+            else "unpriced"
             if pricing.provider == "unpriced"
             else f"user-supplied ({pricing.notes or 'custom'})"
             if prices and effective_model in prices
@@ -507,7 +536,10 @@ def run_eval(
 
 
 def _make_client(base_url: str | None, api_key_env: str | None) -> Any:
-    """An OpenAI client for OpenAI or any OpenAI-compatible endpoint."""
+    """An OpenAI client for OpenAI or any OpenAI-compatible endpoint, or the local
+    Claude Code CLI for `--base-url claude-code`."""
+    if base_url == CLAUDE_CODE:
+        return ClaudeCodeClient()
     if api_key_env:
         key = os.environ.get(api_key_env)
         if not key:
@@ -635,6 +667,34 @@ def UNPRICED(model: str) -> ModelPricing:
     )
 
 
+def REPORTED(model: str) -> ModelPricing:  # reads as a constant
+    """Marker pricing for providers that report each call's cost (Claude Code)."""
+    return ModelPricing(
+        name=model,
+        provider="reported",
+        input_per_1m=0.0,
+        cached_input_per_1m=0.0,
+        output_per_1m=0.0,
+        pricing_updated_at="per call",
+        notes="reported by the provider",
+    )
+
+
+def _reported_cost(model: str, usage: Usage, total: float) -> CostBreakdown:
+    """Token counts with the provider's own total (no per-component split)."""
+    return CostBreakdown(
+        model=model,
+        uncached_input_tokens=usage.prompt_tokens - usage.cached_tokens,
+        cached_input_tokens=usage.cached_tokens,
+        output_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        uncached_input_cost=total,
+        cached_input_cost=0.0,
+        output_cost=0.0,
+        total_cost=total,
+    )
+
+
 def _per_call(total: CostBreakdown, calls: int) -> CostBreakdown:
     """A cost record for `calls` answers, expressed per answer."""
     if calls == 1:
@@ -668,12 +728,14 @@ def _mean_scores(per_attempt: list[list[ScoreOutcome]]) -> list[ScoreOutcome]:
     ]
 
 
-def _judge_cost(
-    calls: list[tuple[str, int, int, int]], prices: Mapping[str, ModelPricing] | None
-) -> float | None:
-    """Price the judge calls made for one example; None if a judge model is unpriced."""
+def _judge_cost(calls: list[JudgeCall], prices: Mapping[str, ModelPricing] | None) -> float | None:
+    """Price the judge calls made for one example; None if a judge model is unpriced.
+    A cost the provider reported (Claude Code) is used as is."""
     total = 0.0
-    for model, prompt_tokens, completion_tokens, cached in calls:
+    for model, prompt_tokens, completion_tokens, cached, reported_cost in calls:
+        if reported_cost is not None:
+            total += reported_cost
+            continue
         try:
             pricing = resolve_pricing(model, prices)
         except UnknownModelError:

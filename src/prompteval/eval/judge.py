@@ -37,9 +37,10 @@ _DEFAULT_CLIENT: OpenAI | None = None
 #: cached) tokens. The runner opens a fresh list around each example's scorers
 #: and prices it as that example's judge cost (#15); outside a run it is None
 #: and nothing is recorded.
-JUDGE_CALLS: ContextVar[list[tuple[str, int, int, int]] | None] = ContextVar(
-    "prompteval_judge_calls", default=None
-)
+#: (model, prompt tokens, completion tokens, cached tokens, reported cost or None)
+JudgeCall = tuple[str, int, int, int, float | None]
+
+JUDGE_CALLS: ContextVar[list[JudgeCall] | None] = ContextVar("prompteval_judge_calls", default=None)
 
 
 class LLMJudgeError(ValueError):
@@ -102,8 +103,15 @@ def _record_usage(model: str, response: Any) -> None:
     cached = getattr(details, "cached_tokens", 0) if details is not None else 0
     # A response without usable token counts is simply not counted.
     with contextlib.suppress(TypeError, ValueError):
+        reported = getattr(response, "reported_cost_usd", None)
         calls.append(
-            (model, int(usage.prompt_tokens), int(usage.completion_tokens), int(cached or 0))
+            (
+                model,
+                int(usage.prompt_tokens),
+                int(usage.completion_tokens),
+                int(cached or 0),
+                float(reported) if isinstance(reported, (int, float)) else None,
+            )
         )
 
 

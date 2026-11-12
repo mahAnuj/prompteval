@@ -75,6 +75,7 @@ from prompteval.eval import stock as stock_scorers
 from prompteval.eval.runner import RunResult, _load_dataset, _make_client
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
+from prompteval.providers.claude_code import CLAUDE_CODE
 from prompteval.version import __version__
 
 
@@ -211,8 +212,21 @@ def bootstrap_cmd(
         seeded_ids = [e.id for e in seeded]
     prompt_text = prompt_path.read_text()
     n = len(seed_inputs) if seed_inputs else n_examples
+    if base_url == CLAUDE_CODE:
+        # Claude Code runs Claude models only; three different ones, so no model
+        # grades what it wrote or answered.
+        if generator == DEFAULT_GENERATOR:
+            generator = "claude-sonnet-5-5"
+        if eval_model == DEFAULT_EVAL_MODEL:
+            eval_model = "claude-haiku-5-5"
     estimate = estimate_cost(prompt_text, n, generator)
-    shown = "unknown (model has no known price)" if estimate is None else f"about ${estimate:.4f}"
+    shown = (
+        "cost reported by Claude Code after the call"
+        if base_url == CLAUDE_CODE and estimate is None
+        else "unknown (model has no known price)"
+        if estimate is None
+        else f"about ${estimate:.4f}"
+    )
     click.echo(f"One call to {generator}, {shown}, to draft {n} examples and scorers.")
     if eval_model == generator:
         click.echo(
@@ -231,14 +245,23 @@ def bootstrap_cmd(
         )
     except ValueError as err:
         raise click.ClickException(str(err)) from err
-    try:
-        pricing = resolve_pricing(generator, None, base_url)
-        cost: float | None = compute_cost(generator, draft.usage, pricing).total_cost
-    except UnknownModelError:
-        cost = None
+    cost: float | None = draft.reported_cost
+    if cost is None:
+        try:
+            pricing = resolve_pricing(generator, None, base_url)
+            cost = compute_cost(generator, draft.usage, pricing).total_cost
+        except UnknownModelError:
+            cost = None
     try:
         paths = write_files(
-            draft, out_dir, cost=cost, eval_model=eval_model, seeded_ids=seeded_ids, force=force
+            draft,
+            out_dir,
+            cost=cost,
+            eval_model=eval_model,
+            seeded_ids=seeded_ids,
+            force=force,
+            base_url=base_url,
+            judge_model="claude-sonnet-5-5" if base_url == CLAUDE_CODE else None,
         )
     except FileExistsError as err:
         raise click.ClickException(str(err)) from err
@@ -751,6 +774,15 @@ def _user_prices(
     help="Judge each model's answers against the baseline's (no scorers needed).",
 )
 @click.option("--judge-model", "sweep_judge_model", default=None, help="Judge for --pairwise.")
+@click.option(
+    "--judge-base-url", "sweep_judge_base_url", default=None, help="Endpoint for the judge."
+)
+@click.option(
+    "--base-url",
+    "sweep_base_url",
+    default=None,
+    help="Endpoint for models without one in prices.yaml, e.g. claude-code.",
+)
 @click.option("--rerun", is_flag=True, help="Run every model again instead of reusing saved runs.")
 @click.option(
     "--html",
@@ -777,6 +809,8 @@ def sweep(
     rerun: bool,
     sweep_pairwise: bool,
     sweep_judge_model: str | None,
+    sweep_judge_base_url: str | None,
+    sweep_base_url: str | None,
     unpriced: bool,
     concurrency: int,
     html_path: Path | None,
@@ -804,7 +838,10 @@ def sweep(
     # Check every model can be priced before spending anything.
     for m in model_list:
         try:
-            resolve_pricing(m, prices, endpoints.get(m, ModelEndpoint()).base_url)
+            m_url = endpoints.get(m, ModelEndpoint()).base_url or sweep_base_url
+            if m_url == CLAUDE_CODE:
+                continue  # Claude Code reports each call's cost
+            resolve_pricing(m, prices, m_url)
         except UnknownModelError as err:
             if not unpriced:
                 raise click.ClickException(str(err)) from err
@@ -827,7 +864,7 @@ def sweep(
                 tag=tag,
                 model=m,
                 prices=prices,
-                base_url=endpoint.base_url,
+                base_url=endpoint.base_url or sweep_base_url,
                 api_key_env=endpoint.api_key_env,
                 params=params,
                 concurrency=concurrency,
@@ -839,7 +876,9 @@ def sweep(
         runs[m] = result
 
     if sweep_pairwise:
-        judge_client = _make_client(None, None)
+        judge_client = _make_client(sweep_judge_base_url, None)
+        if sweep_judge_base_url == CLAUDE_CODE and sweep_judge_model is None:
+            sweep_judge_model = _claude_judge(runs.values())
         base_run = runs[base]
         for m in model_list:
             if m == base:
@@ -984,6 +1023,14 @@ def render_noise(report: ComparisonReport, repeats: int) -> str:
             "To detect smaller changes, add examples or use --repeats."
         )
     return "\n".join(lines)
+
+
+def _claude_judge(runs: Any) -> str:
+    """A Claude judge that is not one of the compared models."""
+    used = {r.model for r in runs}
+    return next(
+        m for m in ("claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5") if m not in used
+    )
 
 
 def _reusable_run(
@@ -1170,7 +1217,10 @@ def compare(
                 run_a,
                 run_b,
                 client=_make_client(judge_base_url, judge_api_key_env),
-                model=judge_model,
+                model=(
+                    judge_model
+                    or (_claude_judge((run_a, run_b)) if judge_base_url == CLAUDE_CODE else None)
+                ),
                 base_url=judge_base_url,
             )
         except ValueError as err:

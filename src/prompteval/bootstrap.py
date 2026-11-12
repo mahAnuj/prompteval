@@ -69,6 +69,7 @@ class Draft:
     notes: str
     generator: str
     usage: Usage = field(default_factory=lambda: Usage(prompt_tokens=0, completion_tokens=0))
+    reported_cost: float | None = None  # when the provider reports it (Claude Code)
 
 
 def _request(prompt_text: str, n: int, seed_inputs: list[str] | None) -> str:
@@ -188,6 +189,11 @@ def generate(
             prompt_tokens=int(getattr(usage_obj, "prompt_tokens", 0) or 0),
             completion_tokens=int(getattr(usage_obj, "completion_tokens", 0) or 0),
         ),
+        reported_cost=(
+            float(response.reported_cost_usd)
+            if isinstance(getattr(response, "reported_cost_usd", None), (int, float))
+            else None
+        ),
     )
 
 
@@ -216,7 +222,9 @@ def _dataset_rows(draft: Draft, seeded_ids: list[str] | None) -> list[dict[str, 
     return rows
 
 
-def _eval_py(draft: Draft, eval_model: str) -> str:
+def _eval_py(
+    draft: Draft, eval_model: str, base_url: str | None = None, judge_model: str | None = None
+) -> str:
     stock = []
     if draft.checks["must_mention"]:
         stock.append("mentions_required_terms")
@@ -225,6 +233,20 @@ def _eval_py(draft: Draft, eval_model: str) -> str:
     if draft.checks["length"]:
         stock.append("length_between")
     imports = f"from prompteval.eval.stock import {', '.join(stock)}\n" if stock else ""
+    if base_url == "claude-code":
+        imports += "from prompteval.providers.claude_code import ClaudeCodeClient\n"
+        judge_setup = (
+            "# Runs through your local Claude Code (no API key); the judge is a\n"
+            "# different model from the one being evaluated.\n"
+            f"JUDGE_MODEL = {json.dumps(judge_model or 'claude-sonnet-5-5')}\n"
+            "_judge_client = ClaudeCodeClient()\n"
+        )
+        judge_args = ", model=JUDGE_MODEL, client=_judge_client"
+        base_url_line = '\n    base_url="claude-code",'
+    else:
+        judge_setup = ""
+        judge_args = ""
+        base_url_line = f"\n    base_url={json.dumps(base_url)}," if base_url else ""
     scorers = ", ".join([*stock, "follows_instructions"])
     return f'''{DRAFT_LINE}
 """Draft eval written by `prompteval bootstrap` (generator: {draft.generator}).
@@ -237,6 +259,7 @@ from pathlib import Path
 
 from prompteval import Eval, llm_judge, scorer
 {imports}
+{judge_setup}
 # The judge rubric, as drafted from your prompt. Edit freely.
 RUBRIC = {json.dumps(draft.judge_rubric)}
 
@@ -244,14 +267,14 @@ RUBRIC = {json.dumps(draft.judge_rubric)}
 @scorer
 def follows_instructions(output: str) -> float:
     """LLM judge for the subjective parts of the prompt (tone, helpfulness)."""
-    return llm_judge(rubric=RUBRIC, text=output)
+    return llm_judge(rubric=RUBRIC, text=output{judge_args})
 
 
 eval = Eval(
     name="bootstrapped",
     dataset=str(Path(__file__).parent / "dataset.jsonl"),
     scorers=[{scorers}],
-    model={json.dumps(eval_model)},
+    model={json.dumps(eval_model)},{base_url_line}
 )
 '''
 
@@ -302,6 +325,8 @@ def write_files(
     eval_model: str = DEFAULT_EVAL_MODEL,
     seeded_ids: list[str] | None = None,
     force: bool = False,
+    base_url: str | None = None,
+    judge_model: str | None = None,
 ) -> list[Path]:
     paths = [out_dir / "dataset.jsonl", out_dir / "eval.py", out_dir / "BOOTSTRAP.md"]
     existing = [p for p in paths if p.exists()]
@@ -315,7 +340,7 @@ def write_files(
         DRAFT_LINE + "\n" + "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
         encoding="utf-8",
     )
-    paths[1].write_text(_eval_py(draft, eval_model), encoding="utf-8")
+    paths[1].write_text(_eval_py(draft, eval_model, base_url, judge_model), encoding="utf-8")
     paths[2].write_text(_notes_md(draft, cost, len(rows), bool(seeded_ids)), encoding="utf-8")
     return paths
 
