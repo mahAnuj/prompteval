@@ -155,3 +155,22 @@ def test_cli_update_keeps_the_catalog_on_failure(
     assert result.exit_code != 0
     assert "current catalog is kept" in result.output
     assert not (tmp_path / "catalog.json").exists()
+
+
+def test_old_catalog_prices_get_a_refresh_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from prompteval import cli
+
+    monkeypatch.setenv("PROMPTEVAL_CACHE_DIR", str(tmp_path))
+    try:
+        cat_mod.save_catalog(cat_mod.build_catalog(LITELLM, OPENROUTER, "2020-01-01"))
+        cat_mod._LOADED = cat_mod._parse(
+            json.loads((tmp_path / "catalog.json").read_text()), "test"
+        )
+        assert cli._stale_price_note("catalog 'gpt-x' (fetched 2020-01-01)") is True
+        assert "prompteval models update" in capsys.readouterr().out
+        assert cli._stale_price_note("user-supplied (--price)") is False
+        assert cli._stale_price_note(None) is False
+    finally:
+        cat_mod._LOADED = None

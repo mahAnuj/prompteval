@@ -24,7 +24,7 @@ Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a m
 
 [![PyPI](https://img.shields.io/pypi/v/prompteval-delta)](https://pypi.org/project/prompteval-delta/)
 
-> **Alpha — v0.1.0, on PyPI as [`prompteval-delta`](https://pypi.org/project/prompteval-delta/).**
+> **Alpha — v0.2.0, on PyPI as [`prompteval-delta`](https://pypi.org/project/prompteval-delta/).**
 > **Do not `pip install prompteval`** — that name on PyPI belongs to an
 > unrelated project. The import and the command are still `prompteval`. The
 > public API may still change before 1.0. Stars and issues welcome.
@@ -191,10 +191,14 @@ DeepInfra, Cerebras, OpenRouter and more. A dated snapshot ships with each
 release; refresh it whenever you like:
 
 ```bash
-prompteval models update          # fetch current prices into ~/.cache/prompteval
+prompteval models update          # fetch current prices into ~/.cache/prompteval (no upgrade needed)
 prompteval models search llama    # find a model's name and price
 prompteval models price claude-sonnet-4-5
 ```
+
+You don't need a new release for new prices: `models update` is all it takes,
+and `run` and `sweep` remind you when the prices they used are over 30 days
+old.
 
 The price follows the endpoint: the same open model costs different amounts on
 Groq, Together and OpenRouter, so `--base-url` decides which provider's entry
@@ -314,16 +318,15 @@ Living source of truth lives in **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.m
 week-by-week status table, decisions log, explicit non-goals, and post-v1 roadmap.
 That file is updated the same commit any code ships; this README only summarises.
 
-**As of 31 Aug 2026 — the tool works end to end.** Everything needed to run a
-comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
-`scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
-with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **291/291 tests
-green.**
+**As of 12 Nov 2026 (v0.2.0).** `init`, `run`, `compare`, `sweep`, `noise`,
+`models` and `scorer` CLIs; a price catalog of ~3,900 models; any
+OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
+by non-inferiority against a margin; CI gates on the worst plausible case; the
+error rate as a quality metric; judge cost reported on its own line; HTML and
+Markdown reports; and a GitHub Action that comments on pull requests.
+**292/292 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
-**What is left is packaging, not capability:** a scorer-writing guide, an API
-stability sweep. v0.1.0 is published on PyPI as `prompteval-delta`; treat the
-public API as still movable until 1.0.
+Still alpha: treat the public API as movable until 1.0.
 
 Original plan was 10 weeks with a 2026-08-16 review point. That date has passed
 with the build ahead of where it needed to be, so the project continues; the

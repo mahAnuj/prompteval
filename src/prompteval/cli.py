@@ -12,6 +12,7 @@ import inspect
 import json
 import sys
 from dataclasses import asdict
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -408,6 +409,29 @@ def run(
         click.echo(f"judge cost                  ${judge:.4f}  (scoring overhead, not the prompt)")
     click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
     click.echo(f"saved to: {saved_path}")
+    _stale_price_note(result.price_source)
+
+
+#: Catalog prices older than this get a one-line reminder to refresh them.
+STALE_PRICE_DAYS = 30
+
+
+def _stale_price_note(price_source: str | None) -> bool:
+    """Remind the user to refresh prices when a run used an old catalog."""
+    if not price_source or not price_source.startswith("catalog"):
+        return False
+    fetched = load_catalog().fetched_at
+    try:
+        age = (datetime.now(UTC).date() - date.fromisoformat(fetched)).days
+    except ValueError:
+        return False
+    if age <= STALE_PRICE_DAYS:
+        return False
+    click.echo(
+        f"note: prices are from {fetched} ({age} days ago). "
+        "Run `prompteval models update` for current ones."
+    )
+    return True
 
 
 def _user_prices(
@@ -557,6 +581,9 @@ def sweep(
         raise click.ClickException(str(err)) from err
     click.echo("")
     click.echo(render_sweep_text(report))
+    for r in report.rows:
+        if _stale_price_note(r.run.price_source):
+            break
     if html_path is not None:
         html_path.write_text(render_sweep_html(report), encoding="utf-8")
         click.echo(f"HTML report: {html_path}")
