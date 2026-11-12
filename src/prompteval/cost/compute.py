@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prompteval.cost.models import get_pricing
+from prompteval.cost.models import ModelPricing, get_pricing
 
 
 @dataclass(frozen=True)
@@ -82,16 +82,16 @@ class CostBreakdown:
     total_cost: float
 
 
-def compute_cost(model: str, usage: Usage) -> CostBreakdown:
+def compute_cost(model: str, usage: Usage, pricing: ModelPricing | None = None) -> CostBreakdown:
     """Compute the USD cost of an LLM call.
 
     Pure function. Validates that token counts are non-negative and that
     `cached_tokens` / `reasoning_tokens` don't exceed their parent counts.
     Raises `UnknownModelError` (from `cost.models`) if the model isn't in
-    the pricing table.
+    the pricing table and no `pricing` is given (user-supplied prices, #8).
     """
     _validate_usage(usage)
-    pricing = get_pricing(model)
+    pricing = pricing or get_pricing(model)
 
     uncached_input = usage.prompt_tokens - usage.cached_tokens
     uncached_input_cost = uncached_input * pricing.input_per_1m / 1_000_000

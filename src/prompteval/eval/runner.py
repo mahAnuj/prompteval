@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +38,7 @@ from typing import Any, Protocol
 
 from openai import OpenAI
 
-from prompteval.cost import CostBreakdown, Usage, compute_cost, get_pricing
+from prompteval.cost import CostBreakdown, ModelPricing, Usage, compute_cost, resolve_pricing
 from prompteval.eval.scorer import ScorerResult, is_scorer, scorer_params
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,9 @@ class RunResult:
     # sha256 of the dataset file, so `compare` can tell whether two runs saw
     # the same examples (#7). None for runs saved before it was recorded.
     dataset_sha256: str | None = None
+    # Where the run went and how it was priced (#8); None for older runs.
+    base_url: str | None = None
+    price_source: str | None = None
 
     @property
     def total_cost(self) -> float:
@@ -164,6 +168,12 @@ class Eval:
     scorers: list[Callable[..., float | ScorerResult]]
     model: str = "gpt-4o-mini"
     runner: Runner | None = None
+    # Any OpenAI-compatible endpoint (#8): Groq, Together, OpenRouter, Fireworks,
+    # a local Ollama or vLLM. None = OpenAI.
+    base_url: str | None = None
+    # Name of the environment variable holding that endpoint's key, e.g.
+    # "GROQ_API_KEY". None = OPENAI_API_KEY (the openai client's default).
+    api_key_env: str | None = None
 
     def __post_init__(self) -> None:
         if not self.scorers:
@@ -237,6 +247,9 @@ def run_eval(
     model: str | None = None,
     client: Any = None,
     progress: Callable[[int, int, str, float, str | None], None] | None = None,
+    prices: Mapping[str, ModelPricing] | None = None,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
 ) -> RunResult:
     """Execute `eval_def` against the prompt at `prompt_path`.
 
@@ -248,6 +261,9 @@ def run_eval(
     different model" comparisons. Future v0.2 multi-provider work will lean
     on this hook too.
 
+    `prices` adds or overrides model prices (user `prices.yaml` / `--price`),
+    and `base_url` / `api_key_env` override the Eval's endpoint (#8).
+
     `progress` is called once per example with `(index, total, example_id,
     latency_s, error)`. Pass a Click `echo`-flavored callback to render
     progress, or None for silent runs (tests use None).
@@ -255,10 +271,15 @@ def run_eval(
     prompt_text = Path(prompt_path).read_text()
     effective_model = model or eval_def.model
     # Fail before the first (paid) call when the model can't be priced (#5).
-    get_pricing(effective_model)
+    pricing = resolve_pricing(effective_model, prices)
+    effective_base_url = base_url or eval_def.base_url
     examples = _load_dataset(Path(eval_def.dataset))
     runner = eval_def.runner or default_runner
-    eff_client = client if client is not None else OpenAI()
+    eff_client = (
+        client
+        if client is not None
+        else _make_client(effective_base_url, api_key_env or eval_def.api_key_env)
+    )
 
     started_at = _now_iso()
     results: list[ExampleResult] = []
@@ -279,7 +300,7 @@ def run_eval(
             # v1: one model per eval, so we can sum usages into one Usage and price once.
             # v1.1 (multi-model runners) will need per-call pricing — different shape.
             summed = _sum_usages(runner_result.usages)
-            cost = compute_cost(effective_model, summed)
+            cost = compute_cost(effective_model, summed, pricing)
 
             scores = [_call_scorer(s, example, output) for s in eval_def.scorers]
         except Exception as err:
@@ -317,7 +338,26 @@ def run_eval(
         finished_at=finished_at,
         examples=results,
         dataset_sha256=hashlib.sha256(Path(eval_def.dataset).read_bytes()).hexdigest(),
+        base_url=effective_base_url,
+        price_source=(
+            f"user-supplied ({pricing.notes or 'custom'})"
+            if prices and effective_model in prices
+            else f"built-in ({pricing.pricing_updated_at})"
+        ),
     )
+
+
+def _make_client(base_url: str | None, api_key_env: str | None) -> Any:
+    """An OpenAI client for OpenAI or any OpenAI-compatible endpoint."""
+    if api_key_env:
+        key = os.environ.get(api_key_env)
+        if not key:
+            raise ValueError(f"Environment variable {api_key_env} is not set (the API key).")
+        return OpenAI(base_url=base_url, api_key=key)
+    if base_url and not os.environ.get("OPENAI_API_KEY"):
+        # Local servers such as Ollama need no key, but the client insists on one.
+        return OpenAI(base_url=base_url, api_key="not-needed")
+    return OpenAI(base_url=base_url)
 
 
 # ---------------------------------------------------------------------------

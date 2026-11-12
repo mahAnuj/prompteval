@@ -46,8 +46,10 @@ provider today so v0.2 dispatch has something to switch on.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -150,7 +152,98 @@ def get_pricing(model_name: str) -> ModelPricing:
     candidates = sorted(m for m in PRICING if needle in _normalize(m) or _normalize(m) in needle)
     suggestion = f" Did you mean: {', '.join(candidates)}?" if candidates else ""
     available = ", ".join(sorted(PRICING))
-    raise UnknownModelError(f"Unknown model: {model_name!r}.{suggestion} Available: {available}.")
+    raise UnknownModelError(
+        f"Unknown model: {model_name!r}.{suggestion} Available: {available}. "
+        f"For any other model (Groq, Together, OpenRouter, Ollama, a newer OpenAI model), "
+        f"give its price: --price input=X,output=Y (USD per 1M tokens), or add it to "
+        f"prices.yaml next to eval.py."
+    )
+
+
+def resolve_pricing(
+    model_name: str, custom: Mapping[str, ModelPricing] | None = None
+) -> ModelPricing:
+    """User-supplied prices first, then the built-in table (#8)."""
+    if custom and model_name in custom:
+        return custom[model_name]
+    return get_pricing(model_name)
+
+
+def parse_price_spec(model_name: str, spec: str) -> ModelPricing:
+    """`input=0.59,output=0.79[,cached=0.30]` (USD per 1M tokens) → ModelPricing.
+
+    `cached` defaults to the input price: no cache discount unless stated.
+    """
+    values: dict[str, float] = {}
+    for part in spec.split(","):
+        if not part.strip():
+            continue
+        key, sep, raw = part.partition("=")
+        key = key.strip().lower()
+        if not sep or key not in {"input", "output", "cached"}:
+            raise ValueError(
+                f"Invalid price part {part.strip()!r}: expected input=X, output=Y "
+                f"and optionally cached=Z (USD per 1M tokens)."
+            )
+        try:
+            value = float(raw)
+        except ValueError as err:
+            raise ValueError(f"Invalid price {raw.strip()!r} for {key!r}.") from err
+        if value < 0:
+            raise ValueError(f"Price for {key!r} cannot be negative.")
+        values[key] = value
+    if "input" not in values or "output" not in values:
+        raise ValueError("A price needs both input=X and output=Y (USD per 1M tokens).")
+    return ModelPricing(
+        name=model_name,
+        provider="custom",
+        input_per_1m=values["input"],
+        cached_input_per_1m=values.get("cached", values["input"]),
+        output_per_1m=values["output"],
+        pricing_updated_at="user-supplied",
+        notes="--price",
+    )
+
+
+def load_price_file(path: str | Path) -> dict[str, ModelPricing]:
+    """Read a user `prices.yaml`:
+
+    models:
+      - name: llama-3.3-70b-versatile
+        input_per_1m: 0.59
+        output_per_1m: 0.79
+        cached_input_per_1m: 0.59   # optional, defaults to input
+        source: https://groq.com/pricing (2026-11-12)   # optional, shown in reports
+    """
+    raw = yaml.safe_load(Path(path).read_text()) or {}
+    entries = raw.get("models") if isinstance(raw, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError(f"{path}: expected a top-level 'models:' list")
+    out: dict[str, ModelPricing] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or "name" not in entry:
+            raise ValueError(f"{path}: every model needs a 'name': {entry!r}")
+        try:
+            inp = float(entry["input_per_1m"])
+            outp = float(entry["output_per_1m"])
+            cached = float(entry.get("cached_input_per_1m", inp))
+        except (KeyError, TypeError, ValueError) as err:
+            raise ValueError(
+                f"{path}: {entry['name']!r} needs numeric input_per_1m and output_per_1m"
+            ) from err
+        if min(inp, outp, cached) < 0:
+            raise ValueError(f"{path}: {entry['name']!r} has a negative price")
+        name = str(entry["name"])
+        out[name] = ModelPricing(
+            name=name,
+            provider=str(entry.get("provider", "custom")),
+            input_per_1m=inp,
+            cached_input_per_1m=cached,
+            output_per_1m=outp,
+            pricing_updated_at=str(entry.get("updated", "user-supplied")),
+            notes=str(entry["source"]) if entry.get("source") else str(path),
+        )
+    return out
 
 
 def _normalize(name: str) -> str:

@@ -163,6 +163,39 @@ would settle it. Examples that fail (timeouts, errors) count against the run
 that failed them, and the decision is adjusted for the number of scorers so
 adding scorers doesn't add false alarms.
 
+### Any model, any OpenAI-compatible provider
+
+The built-in price table covers five OpenAI models (`prompteval models list`).
+Anything else that speaks the OpenAI API (Groq, Together, OpenRouter,
+Fireworks, a local Ollama or vLLM, or a newer OpenAI model) runs too, once you
+give its price:
+
+```bash
+# Groq
+prompteval run --prompt prompts/v1.txt --tag llama \
+  --model llama-3.3-70b-versatile \
+  --base-url https://api.groq.com/openai/v1 --api-key-env GROQ_API_KEY \
+  --price input=0.59,output=0.79        # USD per 1M tokens, from the provider's pricing page
+
+# A local Ollama model: no key, and free
+prompteval run --prompt prompts/v1.txt --tag local \
+  --model llama3.2 --base-url http://localhost:11434/v1 --price input=0,output=0
+```
+
+Or keep prices in `prices.yaml` next to `eval.py`, read automatically:
+
+```yaml
+models:
+  - name: llama-3.3-70b-versatile
+    input_per_1m: 0.59
+    output_per_1m: 0.79
+    source: https://groq.com/pricing (checked 2026-11-12)
+```
+
+`base_url` and `api_key_env` can also be set on the `Eval` itself. Prices you
+supply are recorded with the run, so a report always says where its costs came
+from. An unknown model with no price fails before any request is made.
+
 ### 8. (Optional but the moat) Lock it into CI
 
 A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml). The core of it:
@@ -196,7 +229,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **228/228 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **246/246 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

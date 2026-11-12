@@ -16,6 +16,9 @@ from prompteval.cost.models import (
     UnknownModelError,
     get_pricing,
     list_models,
+    load_price_file,
+    parse_price_spec,
+    resolve_pricing,
 )
 
 __all__ = [
@@ -27,4 +30,7 @@ __all__ = [
     "compute_cost",
     "get_pricing",
     "list_models",
+    "load_price_file",
+    "parse_price_spec",
+    "resolve_pricing",
 ]

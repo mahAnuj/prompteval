@@ -23,7 +23,14 @@ from prompteval.compare import (
     render_text,
 )
 from prompteval.compare.gates import GateSpecError
-from prompteval.cost import UnknownModelError, get_pricing, list_models
+from prompteval.cost import (
+    ModelPricing,
+    UnknownModelError,
+    get_pricing,
+    list_models,
+    load_price_file,
+    parse_price_spec,
+)
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
 from prompteval.eval.scorer import is_scorer
@@ -209,7 +216,47 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
     default=None,
     help="Override the model declared in the Eval (default: use eval_def.model).",
 )
-def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None) -> None:
+@click.option(
+    "--base-url",
+    "base_url",
+    default=None,
+    help=(
+        "Any OpenAI-compatible endpoint, e.g. https://api.groq.com/openai/v1 or "
+        "http://localhost:11434/v1 (Ollama). Default: OpenAI."
+    ),
+)
+@click.option(
+    "--api-key-env",
+    "api_key_env",
+    default=None,
+    help="Environment variable holding that endpoint's API key, e.g. GROQ_API_KEY.",
+)
+@click.option(
+    "--price",
+    "price_spec",
+    default=None,
+    help=(
+        "Price for a model not in the built-in table: input=X,output=Y[,cached=Z], "
+        "USD per 1M tokens."
+    ),
+)
+@click.option(
+    "--prices-file",
+    "prices_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="A prices.yaml of your own (default: prices.yaml next to the eval file, if present).",
+)
+def run(
+    prompt_path: Path,
+    tag: str,
+    eval_file: Path,
+    model_override: str | None,
+    base_url: str | None,
+    api_key_env: str | None,
+    price_spec: str | None,
+    prices_file: Path | None,
+) -> None:
     """Run an Eval against a prompt and persist the results.
 
     Discovers the first `Eval` instance in EVAL_FILE, executes it against the
@@ -229,6 +276,16 @@ def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None
         marker = "✗" if error else "✓"
         click.echo(f"  [{i}/{n}] {ex_id:<24} {marker} {latency:0.2f}s")
 
+    prices: dict[str, ModelPricing] = {}
+    candidate_file = prices_file or eval_file.parent / "prices.yaml"
+    try:
+        if candidate_file.exists():
+            prices.update(load_price_file(candidate_file))
+        if price_spec:
+            prices[model] = parse_price_spec(model, price_spec)
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+
     try:
         result = run_eval(
             eval_def,
@@ -236,8 +293,11 @@ def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None
             tag=tag,
             model=model_override,
             progress=progress,
+            prices=prices,
+            base_url=base_url,
+            api_key_env=api_key_env,
         )
-    except UnknownModelError as err:
+    except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
 
     saved_path = save_run(result)
