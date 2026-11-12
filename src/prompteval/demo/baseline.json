@@ -1,0 +1,832 @@
+{
+  "tag": "baseline",
+  "eval_name": "support-assistant (demo)",
+  "model": "gpt-4o-mini",
+  "prompt_path": "prompts/baseline.txt",
+  "prompt_text": "You are a support assistant for an online store. (long version: policies, tone guide, 12 examples)",
+  "started_at": "2026-11-12T00:00:00+00:00",
+  "finished_at": "2026-11-12T00:00:30+00:00",
+  "examples": [
+    {
+      "id": "support-01",
+      "input": "Customer asks about: refund for a damaged item",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.882,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.769,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1550,
+        "cached_input_tokens": 0,
+        "output_tokens": 220,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002325,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.000132,
+        "total_cost": 0.0003645
+      },
+      "latency_s": 1.264,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-02",
+      "input": "Customer asks about: late delivery",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.94,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.959,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1566,
+        "cached_input_tokens": 0,
+        "output_tokens": 224,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002349,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00013440000000000001,
+        "total_cost": 0.00036930000000000003
+      },
+      "latency_s": 1.236,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-03",
+      "input": "Customer asks about: wrong size sent",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.928,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.779,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1559,
+        "cached_input_tokens": 0,
+        "output_tokens": 219,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023385,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001314,
+        "total_cost": 0.00036525
+      },
+      "latency_s": 1.175,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-04",
+      "input": "Customer asks about: cancel an order",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.775,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.902,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1550,
+        "cached_input_tokens": 0,
+        "output_tokens": 194,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002325,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001164,
+        "total_cost": 0.0003489
+      },
+      "latency_s": 1.075,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-05",
+      "input": "Customer asks about: change the delivery address",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.784,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.915,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1530,
+        "cached_input_tokens": 0,
+        "output_tokens": 185,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002295,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.000111,
+        "total_cost": 0.0003405
+      },
+      "latency_s": 1.17,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-06",
+      "input": "Customer asks about: promo code not working",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.89,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.772,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1510,
+        "cached_input_tokens": 0,
+        "output_tokens": 241,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002265,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001446,
+        "total_cost": 0.00037109999999999997
+      },
+      "latency_s": 1.254,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-07",
+      "input": "Customer asks about: charged twice",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.706,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.863,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1548,
+        "cached_input_tokens": 0,
+        "output_tokens": 196,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023219999999999998,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001176,
+        "total_cost": 0.0003498
+      },
+      "latency_s": 1.017,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-08",
+      "input": "Customer asks about: item out of stock",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.971,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.819,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1502,
+        "cached_input_tokens": 0,
+        "output_tokens": 198,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022529999999999997,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001188,
+        "total_cost": 0.00034409999999999996
+      },
+      "latency_s": 1.166,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-09",
+      "input": "Customer asks about: return window question",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.927,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.747,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1559,
+        "cached_input_tokens": 0,
+        "output_tokens": 193,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023385,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001158,
+        "total_cost": 0.00034964999999999996
+      },
+      "latency_s": 0.997,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-10",
+      "input": "Customer asks about: warranty claim",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.83,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.811,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1526,
+        "cached_input_tokens": 0,
+        "output_tokens": 188,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002289,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00011279999999999999,
+        "total_cost": 0.0003417
+      },
+      "latency_s": 1.069,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-11",
+      "input": "Customer asks about: refund for a damaged item",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.775,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.787,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1568,
+        "cached_input_tokens": 0,
+        "output_tokens": 213,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002352,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001278,
+        "total_cost": 0.000363
+      },
+      "latency_s": 1.238,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-12",
+      "input": "Customer asks about: late delivery",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.762,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.794,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1550,
+        "cached_input_tokens": 0,
+        "output_tokens": 220,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002325,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.000132,
+        "total_cost": 0.0003645
+      },
+      "latency_s": 1.152,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-13",
+      "input": "Customer asks about: wrong size sent",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.79,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.762,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1507,
+        "cached_input_tokens": 0,
+        "output_tokens": 237,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022605,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001422,
+        "total_cost": 0.00036825
+      },
+      "latency_s": 1.153,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-14",
+      "input": "Customer asks about: cancel an order",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.826,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.77,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1558,
+        "cached_input_tokens": 0,
+        "output_tokens": 200,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002337,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00012,
+        "total_cost": 0.0003537
+      },
+      "latency_s": 1.041,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-15",
+      "input": "Customer asks about: change the delivery address",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.832,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.912,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1569,
+        "cached_input_tokens": 0,
+        "output_tokens": 175,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023535,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.000105,
+        "total_cost": 0.00034035
+      },
+      "latency_s": 1.091,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-16",
+      "input": "Customer asks about: promo code not working",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.86,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.842,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1512,
+        "cached_input_tokens": 0,
+        "output_tokens": 158,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022679999999999998,
+        "cached_input_cost": 0.0,
+        "output_cost": 9.48e-05,
+        "total_cost": 0.0003216
+      },
+      "latency_s": 0.945,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-17",
+      "input": "Customer asks about: charged twice",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.984,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.797,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1536,
+        "cached_input_tokens": 0,
+        "output_tokens": 184,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002304,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00011039999999999999,
+        "total_cost": 0.0003408
+      },
+      "latency_s": 1.035,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-18",
+      "input": "Customer asks about: item out of stock",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.92,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.847,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1537,
+        "cached_input_tokens": 0,
+        "output_tokens": 163,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023055,
+        "cached_input_cost": 0.0,
+        "output_cost": 9.779999999999999e-05,
+        "total_cost": 0.00032835
+      },
+      "latency_s": 1.049,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-19",
+      "input": "Customer asks about: return window question",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.85,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.877,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1561,
+        "cached_input_tokens": 0,
+        "output_tokens": 216,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023414999999999997,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001296,
+        "total_cost": 0.00036375
+      },
+      "latency_s": 1.232,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-20",
+      "input": "Customer asks about: warranty claim",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.977,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.878,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1506,
+        "cached_input_tokens": 0,
+        "output_tokens": 189,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022590000000000002,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00011339999999999999,
+        "total_cost": 0.0003393
+      },
+      "latency_s": 1.118,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-21",
+      "input": "Customer asks about: refund for a damaged item",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.758,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.924,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1534,
+        "cached_input_tokens": 0,
+        "output_tokens": 237,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00023009999999999998,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.0001422,
+        "total_cost": 0.0003723
+      },
+      "latency_s": 1.338,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-22",
+      "input": "Customer asks about: late delivery",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.742,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.755,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1521,
+        "cached_input_tokens": 0,
+        "output_tokens": 139,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022815000000000002,
+        "cached_input_cost": 0.0,
+        "output_cost": 8.34e-05,
+        "total_cost": 0.00031155
+      },
+      "latency_s": 0.786,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-23",
+      "input": "Customer asks about: wrong size sent",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.889,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.803,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1502,
+        "cached_input_tokens": 0,
+        "output_tokens": 220,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.00022529999999999997,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.000132,
+        "total_cost": 0.00035729999999999996
+      },
+      "latency_s": 1.246,
+      "error": null,
+      "judge_cost": 0.0
+    },
+    {
+      "id": "support-24",
+      "input": "Customer asks about: cancel an order",
+      "expected": {},
+      "output": "(illustrative run: no model output recorded)",
+      "scores": [
+        {
+          "name": "mentions_required_terms",
+          "score": 0.72,
+          "reasoning": null,
+          "metadata": null
+        },
+        {
+          "name": "professional_tone",
+          "score": 0.768,
+          "reasoning": null,
+          "metadata": null
+        }
+      ],
+      "cost": {
+        "model": "gpt-4o-mini",
+        "uncached_input_tokens": 1524,
+        "cached_input_tokens": 0,
+        "output_tokens": 248,
+        "reasoning_tokens": 0,
+        "uncached_input_cost": 0.0002286,
+        "cached_input_cost": 0.0,
+        "output_cost": 0.00014879999999999998,
+        "total_cost": 0.00037739999999999996
+      },
+      "latency_s": 1.172,
+      "error": null,
+      "judge_cost": 0.0
+    }
+  ],
+  "dataset_sha256": "demo",
+  "base_url": null,
+  "price_source": "illustrative (catalog price for gpt-4o-mini)",
+  "params": {},
+  "repeats": 1
+}

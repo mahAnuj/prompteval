@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `prompteval demo`: a full comparison report in a second, with no API key or
+  network, from two bundled, clearly labelled illustrative runs (#11).
 - `--unpriced` on `run` and `sweep` runs a model with no known price: tokens
   are recorded, cost is reported as not evaluated (token deltas instead), a
   cost gate fails closed, and a sweep never calls an unpriced model cheapest (#17).

@@ -13,6 +13,7 @@ import json
 import sys
 from dataclasses import asdict
 from datetime import UTC, date, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -620,6 +621,42 @@ def sweep(
     if markdown_path is not None:
         markdown_path.write_text(render_sweep_markdown(report), encoding="utf-8")
         click.echo(f"Markdown report: {markdown_path}")
+
+
+DEMO_NOTICE = (
+    "Illustrative data: these two runs were generated for this demo (scripts/build_demo_runs.py), "
+    "not recorded from a model. No API key or network is used."
+)
+
+
+@main.command()
+@click.option(
+    "--html",
+    "html_path",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write the HTML report to this path.",
+)
+def demo(html_path: Path | None) -> None:
+    """See a comparison report in seconds: no API key, no network, no setup.
+
+    Compares two bundled runs of a support-reply prompt, before and after it
+    was shortened, exactly as `prompteval compare` would.
+    """
+    runs_dir = Path(str(files("prompteval.demo")))
+    report = compute_comparison(load_run("baseline", runs_dir), load_run("short-prompt", runs_dir))
+    click.echo(DEMO_NOTICE)
+    click.echo("")
+    click.echo(render_text(report))
+    if html_path is not None:
+        html_path.write_text(render_html(report), encoding="utf-8")
+        click.echo(f"\nHTML report: {html_path}")
+    click.echo("")
+    click.echo("Do the same with your own prompt:")
+    click.echo("  prompteval init")
+    click.echo("  prompteval run --prompt evals/prompts/v1.txt --tag baseline")
+    click.echo("  prompteval run --prompt evals/prompts/v2.txt --tag short-prompt")
+    click.echo("  prompteval compare baseline short-prompt")
 
 
 @main.command()
