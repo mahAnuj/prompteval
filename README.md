@@ -135,9 +135,9 @@ eval = Eval(
 )
 ```
 
-Don't know where to start? `prompteval scorer list` shows 6–8 templates (regex match, JSON-schema valid, contains-substring, exact-match, LLM-judge factuality, LLM-judge tone). `prompteval scorer copy <name>` drops one into your `eval.py`.
+Don't know where to start? `prompteval scorer list` shows 9 stock scorers (exact match, contains substring, regex match, not empty, length between, JSON keys present, required terms, LLM-judge tone, LLM-judge factuality). `prompteval scorer copy <name>` drops one into your `eval.py`.
 
-> **Honest caveat that matters:** prompteval doesn't define quality for your business — you do, by writing scorers. Get this part right and the tool earns its keep. Get it wrong and the tool will tell you wrong things confidently. **Every report shows which scorers ran on how many examples — methodology is always visible.** See [docs/writing-scorers.md](docs/writing-scorers.md) (coming v0.1) for guidance.
+> **Honest caveat that matters:** prompteval doesn't define quality for your business — you do, by writing scorers. Get this part right and the tool earns its keep. Get it wrong and the tool will tell you wrong things confidently. **Every report shows which scorers ran on how many examples — methodology is always visible.** See [docs/writing-scorers.md](docs/writing-scorers.md): deterministic checks first, when a judge is worth it, and why binary scorers need more examples.
 
 ### 5. Run baseline (v1)
 

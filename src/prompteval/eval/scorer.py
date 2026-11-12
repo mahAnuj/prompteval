@@ -11,9 +11,9 @@ Two valid return types:
 - `ScorerResult` — when you want to surface reasoning or metadata to the
   comparison report (LLM-as-judge scorers especially)
 
-Scorers do NOT need to handle their own LLM cost tracking. Judge calls run
-inside scorer functions; in v0.1 their cost is operational overhead, not
-aggregated into the eval's cost report. v0.2 adds judge-cost separation.
+Scorers do NOT need to handle their own LLM cost tracking. `llm_judge` calls
+made inside a scorer are recorded and priced by the runner as the example's
+judge cost, reported apart from the prompt's cost. See docs/writing-scorers.md.
 """
 
 from __future__ import annotations
