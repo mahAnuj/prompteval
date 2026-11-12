@@ -312,3 +312,86 @@ def test_criteria_rubric_and_new_command(tmp_path: Path, monkeypatch: pytest.Mon
     assert "1. Cites the chart." in rubric and "number between 0 and 1" in rubric
     listed = CliRunner().invoke(main, ["criteria", "list"])
     assert "criteria/prompt-create-kundli.md" in listed.output
+
+
+# ---- #25: you decide which criteria judge which prompt ---------------------------------
+
+
+def _two_runs(tmp_path: Path, prompt: str = "prompts/kundli.txt", **saved: Any) -> None:
+    from dataclasses import replace
+
+    for tag, out in (("v1", "bad"), ("v2", "GOOD")):
+        save_run(replace(_run(tag, [out] * 4), prompt_path=prompt, criteria=saved.get(tag)))
+    (tmp_path / "criteria").mkdir(exist_ok=True)
+    for name in ("kundli", "brand-voice", "matching"):
+        (tmp_path / "criteria" / f"{name}.md").write_text(f"1. rule from {name}\n")
+
+
+def _which(*args: str) -> str:
+    result = CliRunner().invoke(main, ["criteria", "which", *args])
+    return result.output if result.exit_code == 0 else f"ERROR {result.output}"
+
+
+def test_choice_order_and_the_reason_is_stated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _two_runs(tmp_path)  # nothing chosen: the prompt file's name decides
+    assert "criteria/kundli.md\nbecause: matches the prompt file kundli.txt" in _which("v1")
+    _two_runs(tmp_path, v1="matching")  # chosen at run time beats the name match
+    assert "criteria/matching.md\nbecause: saved on run v1" in _which("v1", "v2")
+    out = _which("v1", "v2", "--criteria", "brand-voice,kundli")  # compare's flag beats all
+    assert out.startswith("criteria/brand-voice.md\ncriteria/kundli.md\nbecause: --criteria")
+    assert "No criteria file 'nope'" in _which("v1", "--criteria", "nope")
+
+
+def test_no_match_means_the_builtin_checklist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _two_runs(tmp_path, prompt="prompts/other.txt")
+    assert _which("v1").startswith("The built-in checklist")
+
+
+def test_several_files_combine_in_order_and_runs_that_differ_are_flagged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _two_runs(tmp_path, v1="kundli", v2="matching")
+    client, seen = _capturing_judge()
+    with patch("prompteval.eval.runner.OpenAI", return_value=client):
+        differ = CliRunner().invoke(main, ["compare", "v1", "v2", "--pairwise"])
+        both = CliRunner().invoke(
+            main, ["compare", "v1", "v2", "--pairwise", "--criteria", "brand-voice, kundli"]
+        )
+    assert "v2 was run with criteria 'matching'" in differ.output
+    assert "(saved on run v1)" in differ.output
+    assert both.exit_code == 0, both.output
+    system = seen[-1]["messages"][0]["content"]
+    assert system.index("From brand-voice.md:") < system.index("From kundli.md:")
+
+
+def test_run_saves_the_criteria_and_refuses_a_typo_before_spending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prompteval.eval import load_run
+    from tests.test_cli_run import _mock_openai_client
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "criteria").mkdir()
+    (tmp_path / "criteria" / "kundli.md").write_text("1. rule\n")
+    (tmp_path / "prompt.txt").write_text("You write kundli readings.")
+    (tmp_path / "d.jsonl").write_text('{"id": "a", "input": "q"}\n')
+    (tmp_path / "eval.py").write_text(
+        "from prompteval import Eval\neval = Eval(name='e', dataset='d.jsonl', scorers=[])\n"
+    )
+    base = ["run", "--prompt", "prompt.txt", "--eval-file", "eval.py"]
+    unused = _mock_openai_client()
+    with patch("prompteval.eval.runner.OpenAI", return_value=unused):
+        typo = CliRunner().invoke(main, [*base, "--tag", "t0", "--criteria", "kundly"])
+    assert typo.exit_code != 0 and "kundli.md" in typo.output
+    assert not unused.chat.completions.create.called  # refused before any model call
+    with patch("prompteval.eval.runner.OpenAI", return_value=_mock_openai_client()):
+        ok = CliRunner().invoke(main, [*base, "--tag", "t1", "--criteria", "kundli"])
+    assert ok.exit_code == 0, ok.output
+    assert load_run("t1").criteria == "kundli"

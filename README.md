@@ -262,16 +262,27 @@ prompteval criteria new prompt-create-kundli   # writes criteria/prompt-create-k
 4. Explains any Sanskrit term the first time it appears.
 ```
 
-Then every judge applies it:
+**You decide which criteria judge which prompt.** Keep as many files as you
+have prompts (and shared ones, like `brand-voice.md`), then pick, from the
+most specific to the most automatic; the first that applies wins:
 
-```bash
-prompteval compare v1 v2 --pairwise --criteria prompt-create-kundli
-```
+| How | Example |
+| --- | --- |
+| On the comparison | `prompteval compare v1 v2 --pairwise --criteria prompt-create-kundli` |
+| When you run the prompt (saved on the run) | `prompteval run --prompt prompts/v2.txt --tag v2 --criteria prompt-create-kundli` |
+| In `eval.py`, for every run of that eval | `Eval(..., criteria="prompt-create-kundli")` |
+| Name it after the prompt file | `prompts/prompt-create-kundli.txt` → `criteria/prompt-create-kundli.md` |
+| Name it after the eval | `Eval(name="kundli")` → `criteria/kundli.md` |
 
-or set it once in `eval.py`, `Eval(..., criteria="prompt-create-kundli")`, and
-every compare and sweep uses it. A file named after the eval
-(`criteria/<eval name>.md`) is picked up without either. For a per-reply score
-against the same rules, use `llm_judge(rubric=criteria_rubric("prompt-create-kundli"), text=output)`.
+Combine files in priority order with a comma: `--criteria brand-voice,prompt-create-kundli`.
+`prompteval criteria which v1 v2` prints the files a comparison would use and
+why, and the report says the same. A name that doesn't exist is an error (listing
+the files you have), never a silent fallback, and `run --criteria` checks it
+before spending anything. If two runs were made with different criteria,
+compare says so and uses the baseline's unless you pass `--criteria`.
+
+For a per-reply score against the same rules, use
+`llm_judge(rubric=criteria_rubric("prompt-create-kundli"), text=output)`.
 `bootstrap` drafts this file from your prompt for you to rewrite, and
 [`examples/criteria/prompt-create-kundli.md`](examples/criteria/prompt-create-kundli.md)
 is a full example.

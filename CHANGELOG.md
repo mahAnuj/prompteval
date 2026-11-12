@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- You decide which criteria judge which prompt (#25). `run --criteria NAME`
+  saves the choice on the run (checked before any model call), a file named
+  after the prompt file is matched automatically
+  (`prompts/prompt-create-kundli.txt` → `criteria/prompt-create-kundli.md`),
+  several files combine in priority order (`--criteria brand-voice,kundli`),
+  and `prompteval criteria which v1 v2` shows the choice and the reason, as
+  the report does. Order: compare's `--criteria`, the run's saved criteria,
+  the prompt-file match, the eval-name match, the built-in checklist. Runs
+  made with different criteria are flagged.
+
 - Your own judging criteria, in a `criteria/` folder (#24). One file per task
   (`criteria/prompt-create-kundli.md`), your rules in priority order. The
   pairwise judge applies them in place of the built-in checklist: pass

@@ -80,19 +80,46 @@ from prompteval.providers.claude_code import CLAUDE_CODE
 from prompteval.version import __version__
 
 
-def _judge_criteria(ref: str | None, run: RunResult) -> dict[str, Any]:
-    """criteria / criteria_label for judge_pairwise, found the documented way (#24)."""
+def _criteria_choice(
+    ref: str | None, run: RunResult, other: RunResult | None = None
+) -> criteria_mod.Choice | None:
     try:
-        path = criteria_mod.find_for_run(ref, run.criteria, run.eval_name)
-        if path is None:
-            return {}
-        text, draft = criteria_mod.read_criteria(path)
-    except (FileNotFoundError, ValueError) as err:
+        choice = criteria_mod.choose(
+            ref,
+            saved=run.criteria,
+            tag=run.tag,
+            prompt_path=run.prompt_path,
+            eval_name=run.eval_name,
+        )
+    except FileNotFoundError as err:
         raise click.ClickException(str(err)) from err
-    label = criteria_mod.display(path)
-    click.echo(f"Judging against your criteria in {label}.")
-    if draft:
-        click.echo(f"note: {label} is still a DRAFT; review it, then delete the DRAFT line.")
+    if ref is None and other is not None and other.criteria and other.criteria != run.criteria:
+        click.echo(
+            f"note: {other.tag} was run with criteria {other.criteria!r} and {run.tag} with "
+            f"{run.criteria or 'none'}; judging with {run.tag}'s. Pass --criteria to choose."
+        )
+    return choice
+
+
+def _judge_criteria(
+    ref: str | None, run: RunResult, other: RunResult | None = None
+) -> dict[str, Any]:
+    """criteria / criteria_label for judge_pairwise, chosen the documented way (#24, #25)."""
+    choice = _criteria_choice(ref, run, other)
+    if choice is None:
+        click.echo("Judging with the built-in checklist (no criteria file chosen or matched).")
+        return {}
+    try:
+        text, drafts = criteria_mod.combined_text(choice.paths)
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+    label = ", ".join(criteria_mod.display(p) for p in choice.paths)
+    click.echo(f"Judging against your criteria in {label} ({choice.reason}).")
+    for d in drafts:
+        click.echo(
+            f"note: {criteria_mod.display(d)} is still a DRAFT; "
+            "review it, then delete the DRAFT line."
+        )
     return {"criteria": text, "criteria_label": label}
 
 
@@ -415,6 +442,32 @@ def criteria_new(name: str, force: bool) -> None:
     click.echo(f'  or Eval(..., criteria="{safe}") in eval.py, so every compare uses it.')
 
 
+@criteria_group.command("which")
+@click.argument("tag_a")
+@click.argument("tag_b", required=False)
+@click.option("--criteria", "criteria_ref", default=None, help="As on compare.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=None)
+def criteria_which(
+    tag_a: str, tag_b: str | None, criteria_ref: str | None, runs_dir: Path | None
+) -> None:
+    """Show which criteria `compare TAG_A TAG_B --pairwise` would judge with, and why."""
+    try:
+        run_a = load_run(tag_a, runs_dir=runs_dir)
+        run_b = load_run(tag_b, runs_dir=runs_dir) if tag_b else None
+    except FileNotFoundError as err:
+        raise click.ClickException(str(err)) from err
+    choice = _criteria_choice(criteria_ref, run_a, run_b)
+    if choice is None:
+        click.echo(
+            "The built-in checklist: nothing chosen, and no "
+            f"criteria/{Path(run_a.prompt_path).stem}.md or criteria/{run_a.eval_name}.md exists."
+        )
+        return
+    for p in choice.paths:
+        click.echo(criteria_mod.display(p))
+    click.echo(f"because: {choice.reason}")
+
+
 @criteria_group.command("list")
 def criteria_list() -> None:
     """List the criteria files in criteria/."""
@@ -659,6 +712,13 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
     is_flag=True,
     help="Run a model with no known price: tokens are recorded, cost is reported as not evaluated.",
 )
+@click.option(
+    "--criteria",
+    "criteria_ref",
+    default=None,
+    help="The criteria that judge this prompt, saved on the run so every compare uses them: "
+    "a name in criteria/ or a file; several as a,b. Overrides the eval's criteria=.",
+)
 def run(
     prompt_path: Path,
     tag: str,
@@ -672,6 +732,7 @@ def run(
     concurrency: int,
     repeats: int,
     unpriced: bool,
+    criteria_ref: str | None,
 ) -> None:
     """Run an Eval against a prompt and persist the results.
 
@@ -679,6 +740,12 @@ def run(
     dataset that Eval declares, and writes results to .prompteval/runs/<tag>.json.
     """
     eval_def = _discover_eval(eval_file)
+    chosen_criteria = criteria_ref or eval_def.criteria
+    if chosen_criteria:  # check before spending anything: a typo must not be saved
+        try:
+            criteria_mod.resolve_many(chosen_criteria)
+        except FileNotFoundError as err:
+            raise click.ClickException(str(err)) from err
     model = model_override or eval_def.model
     dataset_path = Path(eval_def.dataset)
     drafts = [str(p) for p in (eval_file, dataset_path) if has_draft_marker(p)]
@@ -724,6 +791,8 @@ def run(
     except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
 
+    if criteria_ref:
+        result = replace(result, criteria=criteria_ref)
     saved_path = save_run(result)
 
     click.echo("")
@@ -1337,7 +1406,7 @@ def compare(
                 run_b,
                 client=_make_client(judge_base_url, judge_api_key_env),
                 context=judge_context_file.read_text() if judge_context_file else None,
-                **_judge_criteria(criteria_ref, run_a),
+                **_judge_criteria(criteria_ref, run_a, run_b),
                 model=(
                     judge_model
                     or (_claude_judge((run_a, run_b)) if judge_base_url == CLAUDE_CODE else None)

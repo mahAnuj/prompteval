@@ -10,15 +10,19 @@ for one job: `criteria/prompt-create-kundli.md` for the kundli prompt,
   one reply against it, so a per-reply scorer and the pairwise judge apply the
   same rules.
 
-Which file a comparison uses, first match wins: `--criteria NAME`, then the
-`criteria=` the eval set (saved on the run), then `criteria/<eval name>.md`,
-else the built-in checklist. The report always says which.
+You decide which criteria judge which prompt (#25). First match wins:
+`compare --criteria NAME`; the criteria the run was made with (`run
+--criteria NAME` or `Eval(criteria=...)`, saved on the run); a file named
+after the prompt file; a file named after the eval; else the built-in
+checklist. Several files combine in order: `--criteria brand-voice,kundli`.
+`prompteval criteria which v1 v2` shows the choice, and the report says it.
 
 Paths are relative to where you run prompteval, like `.prompteval/runs`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 CRITERIA_DIR = Path("criteria")
@@ -87,25 +91,73 @@ def criteria_rubric(ref: str, base: Path | None = None) -> str:
     )
 
 
-def find_for_run(
-    explicit: str | None, saved: str | None, eval_name: str, base: Path | None = None
-) -> Path | None:
-    """The criteria file a comparison should use, or None for the built-in checklist.
+def split_refs(ref: str | None) -> list[str]:
+    """`"brand-voice, prompt-create-kundli"` -> both names, in order."""
+    return [r.strip() for r in (ref or "").split(",") if r.strip()]
 
-    An explicit or saved reference that cannot be found is an error (a typo
-    must not silently fall back); the `criteria/<eval name>.md` convention is
-    only used when it exists.
-    """
-    if explicit:
-        return resolve_criteria(explicit, base)
-    if saved:
-        return resolve_criteria(saved, base)
+
+def resolve_many(ref: str, base: Path | None = None) -> list[Path]:
+    """Every file a (comma-separated) reference names; any missing one is an error."""
+    return [resolve_criteria(r, base) for r in split_refs(ref)]
+
+
+@dataclass(frozen=True)
+class Choice:
+    """Which criteria files a comparison uses, and why (#25)."""
+
+    paths: tuple[Path, ...]
+    reason: str  # e.g. "--criteria", "saved on run v1", "matches the prompt file kundli.txt"
+
+
+def _convention(name: str, base: Path | None) -> Path | None:
     folder = (base or Path.cwd()) / CRITERIA_DIR
     for suffix in (".md", ".txt"):
-        candidate = folder / f"{eval_name}{suffix}"
-        if eval_name and candidate.is_file():
+        candidate = folder / f"{name}{suffix}"
+        if name and candidate.is_file():
             return candidate
     return None
+
+
+def choose(
+    explicit: str | None,
+    *,
+    saved: str | None,
+    tag: str,
+    prompt_path: str,
+    eval_name: str,
+    base: Path | None = None,
+) -> Choice | None:
+    """The criteria a comparison should use; None means the built-in checklist.
+
+    First match wins: `--criteria` on compare; the criteria the run was made
+    with (`run --criteria`, or `Eval(criteria=...)`); a file named after the
+    prompt file (`prompts/prompt-create-kundli.txt` -> criteria/prompt-create-
+    kundli.md); a file named after the eval. A name you typed or saved that
+    does not exist is an error, so a typo never silently falls back; the two
+    name matches only apply when the file exists.
+    """
+    if explicit:
+        return Choice(tuple(resolve_many(explicit, base)), "--criteria")
+    if saved:
+        return Choice(tuple(resolve_many(saved, base)), f"saved on run {tag}")
+    stem = Path(prompt_path).stem if prompt_path else ""
+    if (found := _convention(stem, base)) is not None:
+        return Choice((found,), f"matches the prompt file {Path(prompt_path).name}")
+    if (found := _convention(eval_name, base)) is not None:
+        return Choice((found,), f"matches the eval name {eval_name!r}")
+    return None
+
+
+def combined_text(paths: tuple[Path, ...] | list[Path]) -> tuple[str, list[Path]]:
+    """One text for the judge, files in the order chosen (earlier = higher
+    priority), and the files still marked DRAFT."""
+    texts, drafts = [], []
+    for path in paths:
+        text, draft = read_criteria(path)
+        texts.append(text if len(paths) == 1 else f"From {path.name}:\n{text}")
+        if draft:
+            drafts.append(path)
+    return "\n\n".join(texts), drafts
 
 
 def display(path: Path, base: Path | None = None) -> str:
