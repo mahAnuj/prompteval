@@ -213,8 +213,8 @@ class Eval:
     user_template: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.scorers:
-            raise ValueError(f"Eval {self.name!r} has no scorers — at least one is required.")
+        # No scorers is allowed: `compare --pairwise` judges the answers directly
+        # (#19). Without either, compare reports quality as not evaluated.
         for s in self.scorers:
             if not is_scorer(s):
                 raise TypeError(

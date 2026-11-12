@@ -106,9 +106,9 @@ def raises(output: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def test_eval_requires_at_least_one_scorer() -> None:
-    with pytest.raises(ValueError, match="no scorers"):
-        Eval(name="empty", dataset="x.jsonl", scorers=[])
+def test_eval_may_have_no_scorers_for_pairwise_judging() -> None:
+    # #19: `compare --pairwise` needs no scorers, so an Eval without any is valid.
+    assert Eval(name="empty", dataset="x.jsonl", scorers=[]).scorers == []
 
 
 def test_eval_rejects_undecorated_function_in_scorers() -> None:

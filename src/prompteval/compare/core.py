@@ -107,6 +107,8 @@ class ComparisonReport:
     model_b: str = ""
     # Things that make the comparison weaker than it looks (#7).
     warnings: tuple[str, ...] = ()
+    # Plain information for the reader, e.g. how the pairwise judge did (#19).
+    notes: tuple[str, ...] = ()
     # What the LLM judge cost in each run (#15); scoring overhead, not part of
     # the cost verdict. None = a judge model with no known price.
     judge_cost_a: float | None = 0.0
@@ -395,6 +397,19 @@ def _make_verdicts(
     metrics: list[tuple[MetricDelta, bool]] = [(d, False) for d in scorer_deltas]
     if error_delta is not None:
         metrics.append((error_delta, True))
+    if not scorer_deltas:
+        # No quality measure at all: never let that read as "quality holds" (#19).
+        quality_verdict = "not evaluated: no scorers in common"
+        cost_verdict = (
+            "not evaluated: no price for " + ", ".join(unpriced_tags)
+            if unpriced_tags
+            else "see cost row"
+        )
+        recommendation = (
+            "inconclusive — nothing measures quality; add scorers, or run "
+            "`compare --pairwise` to have a judge model compare the answers"
+        )
+        return quality_verdict, cost_verdict, recommendation
     regressed = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "regressed"]
     unclear = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "unclear"]
 
@@ -662,6 +677,8 @@ def render_text(report: ComparisonReport) -> str:
         lines.append(f"Models: {report.tag_a}={report.model_a}, {report.tag_b}={report.model_b}")
     for w in report.warnings:
         lines.append(f"Warning: {w}")
+    for note in report.notes:
+        lines.append(f"Note: {note}")
     if report.error_delta is not None:
         lines.append(
             f"Errors: {report.errors_a} in {report.tag_a}, {report.errors_b} in {report.tag_b} "
@@ -830,6 +847,8 @@ def render_markdown(report: ComparisonReport) -> str:
     lines.append(meta)
     for w in report.warnings:
         lines.append(f"> ⚠️ {w}")
+    for note in report.notes:
+        lines.append(f"> {note}")
     judge = _judge_line(report)
     if judge:
         lines.append(judge)
@@ -879,7 +898,9 @@ def render_html(report: ComparisonReport) -> str:
         if report.model_a or report.model_b
         else ""
     )
-    warnings_html = "".join(f'<p class="warn">Warning: {_h(w)}</p>' for w in report.warnings)
+    warnings_html = "".join(
+        f'<p class="warn">Warning: {_h(w)}</p>' for w in report.warnings
+    ) + "".join(f'<p class="meta">{_h(n)}</p>' for n in report.notes)
     error_row = (
         _html_scorer_row(report.error_delta, lower_is_better=True)
         if report.error_delta is not None

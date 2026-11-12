@@ -11,7 +11,7 @@ import importlib.util
 import inspect
 import json
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
 from importlib.resources import files
 from pathlib import Path
@@ -29,6 +29,12 @@ from prompteval.compare import (
     render_text,
 )
 from prompteval.compare.gates import GateSpecError
+from prompteval.compare.pairwise import (
+    baseline_with_pairwise,
+    judge_pairwise,
+    pairwise_notes,
+    with_pairwise,
+)
 from prompteval.compare.sweep import (
     compute_sweep,
     render_sweep_html,
@@ -50,7 +56,7 @@ from prompteval.cost.catalog import search as catalog_search
 from prompteval.dotenv import load_env_files
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
-from prompteval.eval.runner import RunResult
+from prompteval.eval.runner import RunResult, _make_client
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
 from prompteval.version import __version__
@@ -521,6 +527,13 @@ def _user_prices(
     is_flag=True,
     help="Run a model with no known price: tokens are recorded, cost is reported as not evaluated.",
 )
+@click.option(
+    "--pairwise",
+    "sweep_pairwise",
+    is_flag=True,
+    help="Judge each model's answers against the baseline's (no scorers needed).",
+)
+@click.option("--judge-model", "sweep_judge_model", default=None, help="Judge for --pairwise.")
 @click.option("--rerun", is_flag=True, help="Run every model again instead of reusing saved runs.")
 @click.option(
     "--html",
@@ -545,6 +558,8 @@ def sweep(
     param_specs: tuple[str, ...],
     margin: float,
     rerun: bool,
+    sweep_pairwise: bool,
+    sweep_judge_model: str | None,
     unpriced: bool,
     concurrency: int,
     html_path: Path | None,
@@ -605,6 +620,17 @@ def sweep(
             raise click.ClickException(f"{m}: {err}") from err
         save_run(result)
         runs[m] = result
+
+    if sweep_pairwise:
+        judge_client = _make_client(None, None)
+        base_run = runs[base]
+        for m in model_list:
+            if m == base:
+                continue
+            click.echo(f"{m}: judging against {base}...")
+            judged = judge_pairwise(base_run, runs[m], client=judge_client, model=sweep_judge_model)
+            runs[m] = with_pairwise(runs[m], judged)
+        runs[base] = baseline_with_pairwise(base_run)
 
     try:
         report = compute_sweep(runs, base, margin=margin)
@@ -855,6 +881,17 @@ def _count_examples(dataset_path: Path) -> int:
     ),
 )
 @click.option(
+    "--pairwise",
+    is_flag=True,
+    help="Have a judge model compare the two runs' answers directly (no scorers needed). "
+    "Two judge calls per example, billed to your key.",
+)
+@click.option(
+    "--judge-model", default=None, help="Judge for --pairwise (default: a model neither run used)."
+)
+@click.option("--judge-base-url", default=None, help="OpenAI-compatible endpoint for the judge.")
+@click.option("--judge-api-key-env", default=None, help="Env var holding the judge endpoint's key.")
+@click.option(
     "--gate-mode",
     "gate_mode",
     type=click.Choice(["bound", "significant"]),
@@ -881,6 +918,10 @@ def compare(
     gate_mode: str,
     margin: float,
     markdown_path: Path | None,
+    pairwise: bool,
+    judge_model: str | None,
+    judge_base_url: str | None,
+    judge_api_key_env: str | None,
 ) -> None:
     """Compare two persisted runs and print the paired delta report.
 
@@ -905,10 +946,27 @@ def compare(
         except GateSpecError as err:
             raise click.ClickException(str(err)) from err
 
+    notes: tuple[str, ...] = ()
+    if pairwise:
+        try:
+            result = judge_pairwise(
+                run_a,
+                run_b,
+                client=_make_client(judge_base_url, judge_api_key_env),
+                model=judge_model,
+                base_url=judge_base_url,
+            )
+        except ValueError as err:
+            raise click.ClickException(str(err)) from err
+        notes = pairwise_notes(result, run_a, run_b)
+        run_a, run_b = baseline_with_pairwise(run_a), with_pairwise(run_b, result)
+
     try:
         report = compute_comparison(run_a, run_b, margin=margin)
     except ValueError as err:
         raise click.ClickException(str(err)) from err
+    if notes:
+        report = replace(report, notes=report.notes + notes)
 
     click.echo(render_text(report))
 

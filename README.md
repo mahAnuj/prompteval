@@ -200,6 +200,23 @@ prompteval run --prompt prompts/v2.txt --tag short-prompt
 
 ### 7. Compare — the moment of truth
 
+**No scorers yet?** Add `--pairwise` and a judge model compares the two runs'
+answers directly, example by example:
+
+```bash
+prompteval compare baseline short-prompt --pairwise
+```
+
+Each example is judged twice with the answers swapped; if the two verdicts
+disagree it counts as a tie, so a judge that favours whichever answer it reads
+first can't manufacture a win. The judge defaults to a model neither run used,
+costs two calls per example (on your key, reported in the output), and its
+result goes through the same statistics and verdict as any scorer. Scorers
+still give sharper, cheaper answers once you know what "good" means; pairwise
+is the way to get a first result without writing any. `sweep --pairwise` works
+the same way.
+
+
 ```bash
 prompteval compare baseline short-prompt
 ```
@@ -365,7 +382,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**302/302 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**312/312 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

@@ -8,7 +8,7 @@ The project uses [uv](https://docs.astral.sh/uv/). Every command runs through it
 
 ```bash
 uv sync --all-extras --dev   # install deps (creates .venv)
-uv run pytest                # 302 tests, no network or API key needed
+uv run pytest                # 312 tests, no network or API key needed
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting gate (drop --check to fix)
 uv run mypy src tests        # strict mode, must stay clean
@@ -60,6 +60,8 @@ commands: `init`, `demo`, `models`, `run`, `compare`, `sweep`, `noise`, `scorer`
 - **`cost/compute.py`** + **`cost/models.py`** — turn token usage into cost using
   that table.
 - **`compare/core.py`** — the paired delta report between two persisted runs.
+- **`compare/pairwise.py`** — `--pairwise`: a judge model compares two runs'
+  answers (both orders; disagreement = tie) and becomes a scorer.
 - **`compare/sweep.py`** — `sweep`: one prompt on several models, each compared
   to a baseline, with a one-line answer.
 - **`action.yml` + `action/run.sh`** — the GitHub Action (base vs head, or a
@@ -76,7 +78,7 @@ commands: `init`, `demo`, `models`, `run`, `compare`, `sweep`, `noise`, `scorer`
   both ruff and mypy on purpose: the templates reference public API that does
   not exist yet, so linting them produces false positives. Do not "fix" the
   templates to satisfy the linters, and do not remove the excludes.
-- **Tests must not need network or an API key.** All 302 pass offline; keep new
+- **Tests must not need network or an API key.** All 312 pass offline; keep new
   tests that way by stubbing the model client rather than calling out.
 - **Cost and quality are reported together.** A change that reports one without
   the other defeats the point of the tool.

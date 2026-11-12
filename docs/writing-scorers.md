@@ -26,6 +26,13 @@ def mentions_refund_window(output: str, expected: dict) -> float:
 - An exception inside a scorer fails that example, and failures count against
   the run in `compare` (the error rate is a quality metric of its own).
 
+## Or skip scorers for a first result
+
+`prompteval compare a b --pairwise` has a judge model pick the better answer for
+each example (asked twice with the order swapped, so position bias becomes a
+tie). It is the quickest first signal; scorers are cheaper, more precise and
+easier to trust once you know what to check.
+
 ## Start with the stock scorers
 
 `prompteval scorer list` shows them; `prompteval scorer copy <name>` drops one

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `compare --pairwise` / `sweep --pairwise`: a judge model compares the runs'
+  answers directly, no scorers needed. Each example is judged in both orders;
+  disagreement counts as a tie. Win/tie/loss feeds the usual statistics and
+  verdict; judge model, decisiveness and cost are reported (#19).
+- An eval may now have no scorers. With no quality measure, `compare` reports
+  quality as not evaluated instead of "holds".
+
 ## 0.2.2 — 2026-11-12
 
 - Competitor scan re-checked against current docs (2026-11-12); README
