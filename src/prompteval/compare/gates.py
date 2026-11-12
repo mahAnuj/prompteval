@@ -98,6 +98,20 @@ def evaluate_gates(
         raise GateSpecError(f"Unknown gate mode {mode!r}; expected one of {GATE_MODES}.")
     breaches: list[GateBreach] = []
     for clause in clauses:
+        if clause.metric == "cost" and report.unpriced_tags:
+            # Fail closed: an unknown cost must not pass a cost gate (#17).
+            breaches.append(
+                GateBreach(
+                    clause=clause,
+                    actual_pct=float("nan"),
+                    detail=(
+                        f"cost cannot be evaluated: no price for "
+                        f"{', '.join(report.unpriced_tags)}; give one with --price, or "
+                        f"drop the cost clause"
+                    ),
+                )
+            )
+            continue
         if clause.metric == "cost":
             breach = (
                 _bound_cost_clause(clause, report)

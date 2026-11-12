@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `--unpriced` on `run` and `sweep` runs a model with no known price: tokens
+  are recorded, cost is reported as not evaluated (token deltas instead), a
+  cost gate fails closed, and a sweep never calls an unpriced model cheapest (#17).
 - Docs pin the Action to a release tag (`@v0.2.1`). The `@v1` they showed
   was never created: GitHub refuses the workflow token permission to create
   a tag that contains workflow files, so a moving major tag needs a manual

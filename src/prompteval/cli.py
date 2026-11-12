@@ -336,6 +336,11 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
     show_default=True,
     help="Answers per example; scores are their mean. Costs that many times more.",
 )
+@click.option(
+    "--unpriced",
+    is_flag=True,
+    help="Run a model with no known price: tokens are recorded, cost is reported as not evaluated.",
+)
 def run(
     prompt_path: Path,
     tag: str,
@@ -348,6 +353,7 @@ def run(
     param_specs: tuple[str, ...],
     concurrency: int,
     repeats: int,
+    unpriced: bool,
 ) -> None:
     """Run an Eval against a prompt and persist the results.
 
@@ -389,6 +395,7 @@ def run(
             params=_parse_params(param_specs),
             concurrency=concurrency,
             repeats=repeats,
+            unpriced=unpriced,
         )
     except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
@@ -403,8 +410,19 @@ def run(
         click.echo(f"{name:<28} {mean:.2f} (n={n_ok})")
     if n_err:
         click.echo(f"errors                      {n_err} of {len(result.examples)} examples failed")
-    avg_cost = result.total_cost / max(1, len(result.examples))
-    click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
+    if result.priced:
+        avg_cost = result.total_cost / max(1, len(result.examples))
+        click.echo(
+            f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)"
+        )
+    else:
+        tokens_in = sum(
+            e.cost.uncached_input_tokens + e.cost.cached_input_tokens for e in result.examples
+        )
+        tokens_out = sum(e.cost.output_tokens for e in result.examples)
+        click.echo(
+            f"total cost                  unpriced (tokens: {tokens_in} in, {tokens_out} out)"
+        )
     judge = result.total_judge_cost
     if judge is None:
         click.echo("judge cost                  unpriced (a judge model has no known price)")
@@ -497,6 +515,11 @@ def _user_prices(
     show_default=True,
     help="Examples run at once, per model.",
 )
+@click.option(
+    "--unpriced",
+    is_flag=True,
+    help="Run a model with no known price: tokens are recorded, cost is reported as not evaluated.",
+)
 @click.option("--rerun", is_flag=True, help="Run every model again instead of reusing saved runs.")
 @click.option(
     "--html",
@@ -521,6 +544,7 @@ def sweep(
     param_specs: tuple[str, ...],
     margin: float,
     rerun: bool,
+    unpriced: bool,
     concurrency: int,
     html_path: Path | None,
     markdown_path: Path | None,
@@ -549,7 +573,9 @@ def sweep(
         try:
             resolve_pricing(m, prices, endpoints.get(m, ModelEndpoint()).base_url)
         except UnknownModelError as err:
-            raise click.ClickException(str(err)) from err
+            if not unpriced:
+                raise click.ClickException(str(err)) from err
+            click.echo(f"{m}: no known price; running unpriced (tokens only)")
 
     runs: dict[str, RunResult] = {}
     for m in model_list:
@@ -572,6 +598,7 @@ def sweep(
                 api_key_env=endpoint.api_key_env,
                 params=params,
                 concurrency=concurrency,
+                unpriced=unpriced,
             )
         except (UnknownModelError, ValueError) as err:
             raise click.ClickException(f"{m}: {err}") from err

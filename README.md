@@ -257,7 +257,11 @@ models:
 
 `base_url` and `api_key_env` can also be set on the `Eval` itself. Prices you
 supply are recorded with the run, so a report always says where its costs came
-from. An unknown model with no price fails before any request is made.
+from. An unknown model with no price fails before any request is made, unless you
+pass `--unpriced`: then it runs, token counts are recorded, and `compare` and
+`sweep` say cost was not evaluated (comparing tokens instead). A cost gate
+fails rather than passing on $0, and a sweep never names an unpriced model as
+the cheapest.
 
 ### Which model is cheapest for this prompt?
 
@@ -351,7 +355,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**295/295 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**301/301 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

@@ -111,6 +111,10 @@ class ComparisonReport:
     # the cost verdict. None = a judge model with no known price.
     judge_cost_a: float | None = 0.0
     judge_cost_b: float | None = 0.0
+    # Runs made with --unpriced (#17): their cost is unknown, so cost is not
+    # evaluated and tokens are compared instead.
+    unpriced_tags: tuple[str, ...] = ()
+    token_deltas: tuple[MetricDelta, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +384,7 @@ def _make_verdicts(
     margin: float = DEFAULT_MARGIN,
     error_delta: MetricDelta | None = None,
     n: int = 0,
+    unpriced_tags: tuple[str, ...] = (),
 ) -> tuple[str, str, str]:
     """Quality verdict, cost verdict and recommendation.
 
@@ -393,7 +398,13 @@ def _make_verdicts(
     regressed = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "regressed"]
     unclear = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "unclear"]
 
-    if cost_delta.significant and cost_delta.delta_pct is not None:
+    if unpriced_tags:
+        # No price, no cost verdict: never let $0 read as a saving (#17).
+        cost_delta = replace(cost_delta, significant=False)
+        cost_verdict = (
+            f"not evaluated: no price for {', '.join(unpriced_tags)} (tokens compared instead)"
+        )
+    elif cost_delta.significant and cost_delta.delta_pct is not None:
         magnitude = abs(cost_delta.delta_pct)
         direction = "reduction" if cost_delta.delta_pct < 0 else "increase"
         p_str = _format_p(cost_delta.p_value)
@@ -425,7 +436,11 @@ def _make_verdicts(
         return quality_verdict, cost_verdict, recommendation
 
     quality_verdict = f"holds — no metric can have dropped by more than {margin:.2f}"
-    if cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct < 0:
+    if unpriced_tags:
+        recommendation = (
+            f"quality holds; cost not evaluated — no price for {', '.join(unpriced_tags)}"
+        )
+    elif cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct < 0:
         recommendation = f"ship {tag_b} — cost savings real, quality holds"
     elif cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct > 0:
         recommendation = (
@@ -513,8 +528,37 @@ def compute_comparison(
     latencies_b = np.array([run_b.examples[i].latency_s for i in idx_b], dtype=float)
     latency_delta = _build_relative_delta("avg latency", latencies_a, latencies_b)
 
+    unpriced_tags = tuple(r.tag for r in (run_a, run_b) if not r.priced)
+    token_deltas: tuple[MetricDelta, ...] = ()
+    if unpriced_tags:
+        ex_a = [run_a.examples[i] for i in idx_a]
+        ex_b = [run_b.examples[i] for i in idx_b]
+        token_deltas = (
+            _build_relative_delta(
+                "input tokens",
+                np.array(
+                    [e.cost.uncached_input_tokens + e.cost.cached_input_tokens for e in ex_a],
+                    dtype=float,
+                ),
+                np.array(
+                    [e.cost.uncached_input_tokens + e.cost.cached_input_tokens for e in ex_b],
+                    dtype=float,
+                ),
+            ),
+            _build_relative_delta(
+                "output tokens",
+                np.array([e.cost.output_tokens for e in ex_a], dtype=float),
+                np.array([e.cost.output_tokens for e in ex_b], dtype=float),
+            ),
+        )
     quality_verdict, cost_verdict, recommendation = _make_verdicts(
-        run_b.tag, scorer_deltas, cost_delta, margin=margin, error_delta=error_delta, n=n
+        run_b.tag,
+        scorer_deltas,
+        cost_delta,
+        margin=margin,
+        error_delta=error_delta,
+        n=n,
+        unpriced_tags=unpriced_tags,
     )
 
     return ComparisonReport(
@@ -538,6 +582,8 @@ def compute_comparison(
         warnings=warnings,
         judge_cost_a=run_a.total_judge_cost,
         judge_cost_b=run_b.total_judge_cost,
+        unpriced_tags=unpriced_tags,
+        token_deltas=token_deltas,
     )
 
 
@@ -654,23 +700,36 @@ def render_text(report: ComparisonReport) -> str:
 
     lines.append("─" * len(header))
 
-    # Cost row — values + percent change
+    # Cost row — values + percent change (or "unpriced", #17)
     cost = report.cost_delta
-    cost_a_str = f"${cost.value_a * report.n_paired:.4f}"
-    cost_b_str = f"${cost.value_b * report.n_paired:.4f}"
-    cost_delta_str = (
-        f"{cost.delta_pct:+.0f}%" if cost.delta_pct is not None else _signed(cost.delta)
-    )
-    cost_ci_str = f"[{cost.ci_low:+.0f}%, {cost.ci_high:+.0f}%]"
-    cost_p_str = _format_p(cost.p_value)
-    lines.append(
-        f"{'total cost':<26}"
-        f"{cost_a_str:<14}"
-        f"{cost_b_str:<16}"
-        f"{cost_delta_str:<14}"
-        f"{cost_ci_str:<22}"
-        f"{cost_p_str:<10}"
-    )
+    if report.unpriced_tags:
+        lines.append(f"{'total cost':<26}unpriced: no price for {', '.join(report.unpriced_tags)}")
+        for t in report.token_deltas:
+            pct = f"{t.delta_pct:+.0f}%" if t.delta_pct is not None else _signed(t.delta)
+            lines.append(
+                f"{t.name + ' / example':<26}"
+                f"{t.value_a:<14.0f}"
+                f"{t.value_b:<16.0f}"
+                f"{pct:<14}"
+                f"{f'[{t.ci_low:+.0f}%, {t.ci_high:+.0f}%]':<22}"
+                f"{_format_p(t.p_value):<10}"
+            )
+    else:
+        cost_a_str = f"${cost.value_a * report.n_paired:.4f}"
+        cost_b_str = f"${cost.value_b * report.n_paired:.4f}"
+        cost_delta_str = (
+            f"{cost.delta_pct:+.0f}%" if cost.delta_pct is not None else _signed(cost.delta)
+        )
+        cost_ci_str = f"[{cost.ci_low:+.0f}%, {cost.ci_high:+.0f}%]"
+        cost_p_str = _format_p(cost.p_value)
+        lines.append(
+            f"{'total cost':<26}"
+            f"{cost_a_str:<14}"
+            f"{cost_b_str:<16}"
+            f"{cost_delta_str:<14}"
+            f"{cost_ci_str:<22}"
+            f"{cost_p_str:<10}"
+        )
 
     # Latency row — same shape as cost
     lat = report.latency_delta
@@ -740,14 +799,22 @@ def render_markdown(report: ComparisonReport) -> str:
             f"| error rate | {e.value_a:.0%} | {e.value_b:.0%} | {_signed(e.delta)} | "
             f"[{_signed(e.ci_low)}, {_signed(e.ci_high)}] | {_format_p(e.p_value)} |"
         )
-    for label, d, unit in (
-        ("cost / example", report.cost_delta, "$"),
-        ("latency", report.latency_delta, "s"),
-    ):
+    rows: list[tuple[str, MetricDelta, str]] = []
+    if report.unpriced_tags:
+        lines.append(
+            f"| cost / example | unpriced: no price for {', '.join(report.unpriced_tags)} | | | | |"
+        )
+        rows += [(f"{t.name} / example", t, "n") for t in report.token_deltas]
+    else:
+        rows.append(("cost / example", report.cost_delta, "$"))
+    rows.append(("latency", report.latency_delta, "s"))
+    for label, d, unit in rows:
         pct = f"{d.delta_pct:+.0f}%" if d.delta_pct is not None else _signed(d.delta)
         va, vb = (
             (f"${d.value_a:.6f}", f"${d.value_b:.6f}")
             if unit == "$"
+            else (f"{d.value_a:.0f}", f"{d.value_b:.0f}")
+            if unit == "n"
             else (f"{d.value_a:.2f}s", f"{d.value_b:.2f}s")
         )
         lines.append(
@@ -820,10 +887,19 @@ def render_html(report: ComparisonReport) -> str:
     )
 
     scorer_rows = "\n".join(_html_scorer_row(d) for d in report.scorer_deltas)
-    cost_row = _html_relative_row(
-        "total cost",
-        report.cost_delta,
-        value_fmt=lambda v: f"${v * report.n_paired:.4f}",
+    cost_row = (
+        f"<tr><td>total cost</td><td colspan='5'>unpriced: no price for "
+        f"{_h(', '.join(report.unpriced_tags))}</td></tr>"
+        + "".join(
+            _html_relative_row(f"{t.name} / example", t, value_fmt=lambda v: f"{v:.0f}")
+            for t in report.token_deltas
+        )
+        if report.unpriced_tags
+        else _html_relative_row(
+            "total cost",
+            report.cost_delta,
+            value_fmt=lambda v: f"${v * report.n_paired:.4f}",
+        )
     )
     latency_row = _html_relative_row(
         "avg latency",

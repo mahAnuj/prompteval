@@ -58,6 +58,10 @@ def compute_sweep(
 
 def _verdict(report: ComparisonReport, holds: bool, statuses: list[str]) -> str:
     cost = report.cost_delta
+    if report.unpriced_tags:
+        if "regressed" in statuses:
+            return "worse quality"
+        return "quality holds, unpriced" if holds else "inconclusive: add examples"
     cheaper = cost.significant and cost.delta_pct is not None and cost.delta_pct < 0
     dearer = cost.significant and cost.delta_pct is not None and cost.delta_pct > 0
     if "regressed" in statuses:
@@ -76,6 +80,7 @@ def _answer(rows: list[SweepRow], baseline: str) -> str:
         r
         for r in rows
         if r.report is not None
+        and not r.report.unpriced_tags
         and r.holds_quality
         and r.report.cost_delta.significant
         and r.report.cost_delta.delta_pct is not None
@@ -135,8 +140,12 @@ def _cells(report: SweepReport) -> tuple[list[str], list[list[str]]]:
                 r.model + (" (baseline)" if r.report is None else ""),
                 *scores,
                 f"{errors}/{n}",
-                f"${r.run.total_cost / ok:.6f}" if ok else "n/a",
-                delta,
+                "unpriced"
+                if not r.run.priced
+                else f"${r.run.total_cost / ok:.6f}"
+                if ok
+                else "n/a",
+                "unpriced" if (r.report and r.report.unpriced_tags) or not r.run.priced else delta,
                 f"{r.run.avg_latency_s:.2f}s",
                 r.verdict,
             ]

@@ -137,6 +137,11 @@ class RunResult:
         return sum(e.cost.total_cost for e in self.examples if e.error is None)
 
     @property
+    def priced(self) -> bool:
+        """False for a run made with --unpriced: its costs are not real (#17)."""
+        return self.price_source != "unpriced"
+
+    @property
     def total_judge_cost(self) -> float | None:
         """Cost of the LLM-judge calls; None if any judge model had no price."""
         costs = [e.judge_cost for e in self.examples]
@@ -342,6 +347,7 @@ def run_eval(
     params: dict[str, Any] | None = None,
     concurrency: int = 1,
     repeats: int = 1,
+    unpriced: bool = False,
 ) -> RunResult:
     """Execute `eval_def` against the prompt at `prompt_path`.
 
@@ -355,6 +361,10 @@ def run_eval(
 
     `prices` adds or overrides model prices (user `prices.yaml` / `--price`),
     and `base_url` / `api_key_env` override the Eval's endpoint (#8).
+
+    `unpriced` runs a model that has no known price (#17): tokens are recorded,
+    every cost is 0 and the run is marked `price_source="unpriced"`, so
+    `compare` and the gates report cost as not evaluated instead of $0.
 
     `repeats` answers each example that many times (#14): each scorer's score
     is the mean over the answers, cost and latency are per call (the mean),
@@ -373,7 +383,12 @@ def run_eval(
     effective_model = model or eval_def.model
     # Fail before the first (paid) call when the model can't be priced (#5).
     effective_base_url = base_url or eval_def.base_url
-    pricing = resolve_pricing(effective_model, prices, effective_base_url)
+    try:
+        pricing = resolve_pricing(effective_model, prices, effective_base_url)
+    except UnknownModelError:
+        if not unpriced:
+            raise
+        pricing = UNPRICED(effective_model)
     examples = _load_dataset(Path(eval_def.dataset))
     effective_params = {**eval_def.params, **(params or {})}
     runner: Runner = eval_def.runner or functools.partial(
@@ -474,7 +489,9 @@ def run_eval(
         params=effective_params,
         repeats=max(1, repeats),
         price_source=(
-            f"user-supplied ({pricing.notes or 'custom'})"
+            "unpriced"
+            if pricing.provider == "unpriced"
+            else f"user-supplied ({pricing.notes or 'custom'})"
             if prices and effective_model in prices
             else pricing.notes
             if (pricing.notes or "").startswith("catalog")
@@ -595,6 +612,19 @@ def _sum_usages(usages: list[Usage]) -> Usage:
         completion_tokens=sum(u.completion_tokens for u in usages),
         cached_tokens=sum(u.cached_tokens for u in usages),
         reasoning_tokens=sum(u.reasoning_tokens for u in usages),
+    )
+
+
+def UNPRICED(model: str) -> ModelPricing:
+    """A zero price for a model with no known price: tokens counted, cost unknown."""
+    return ModelPricing(
+        name=model,
+        provider="unpriced",
+        input_per_1m=0.0,
+        cached_input_per_1m=0.0,
+        output_per_1m=0.0,
+        pricing_updated_at="n/a",
+        notes="unpriced",
     )
 
 
