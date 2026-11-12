@@ -200,6 +200,12 @@ eval = Eval(
 )
 ```
 
+**Judged qualities go in a criteria file.** For what a code check can't
+measure (accuracy against your data, tone, what must never be said), write your
+rules once in `criteria/<prompt name>.md`, most important first, and decide
+which prompt each file judges. The pairwise judge and `llm_judge` both read it.
+See [the `criteria/` folder](#7-compare--the-moment-of-truth) in step 7.
+
 Don't know where to start? `prompteval scorer list` shows 9 stock scorers (exact match, contains substring, regex match, not empty, length between, JSON keys present, required terms, LLM-judge tone, LLM-judge factuality). `prompteval scorer copy <name>` drops one into your `eval.py`.
 
 > **Honest caveat that matters:** prompteval doesn't define quality for your business — you do, by writing scorers. Get this part right and the tool earns its keep. Get it wrong and the tool will tell you wrong things confidently. **Every report shows which scorers ran on how many examples — methodology is always visible.** See [docs/writing-scorers.md](docs/writing-scorers.md): deterministic checks first, when a judge is worth it, and why binary scorers need more examples.
