@@ -248,6 +248,10 @@ it says so rather than guessing.
   settings is reused (`--rerun` to force). Add examples and sweep again.
 - `--markdown` and `--html` write the table for a PR, an issue or a post.
 
+`run` and `sweep` call the model for 4 examples at once (`--concurrency`, lower
+it if your provider rate-limits you); rate limits and server errors are retried
+with backoff, and results are saved in dataset order either way.
+
 ### 8. (Optional but the moat) Lock it into CI
 
 Add the Action, and every pull request that changes the prompt gets the report
@@ -307,7 +311,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **281/281 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **283/283 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

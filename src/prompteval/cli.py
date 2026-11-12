@@ -317,6 +317,13 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
         "--param max_tokens=300. Values are read as JSON when they parse, else as text."
     ),
 )
+@click.option(
+    "--concurrency",
+    type=click.IntRange(1, 64),
+    default=4,
+    show_default=True,
+    help="Examples run at once. Lower it if the provider rate-limits you.",
+)
 def run(
     prompt_path: Path,
     tag: str,
@@ -327,6 +334,7 @@ def run(
     price_spec: str | None,
     prices_file: Path | None,
     param_specs: tuple[str, ...],
+    concurrency: int,
 ) -> None:
     """Run an Eval against a prompt and persist the results.
 
@@ -366,6 +374,7 @@ def run(
             base_url=base_url or endpoint.base_url,
             api_key_env=api_key_env or endpoint.api_key_env,
             params=_parse_params(param_specs),
+            concurrency=concurrency,
         )
     except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
@@ -439,6 +448,13 @@ def _user_prices(
     show_default=True,
     help="Largest scorer drop (0-1 scale) still counted as 'quality holds'.",
 )
+@click.option(
+    "--concurrency",
+    type=click.IntRange(1, 64),
+    default=4,
+    show_default=True,
+    help="Examples run at once, per model.",
+)
 @click.option("--rerun", is_flag=True, help="Run every model again instead of reusing saved runs.")
 @click.option(
     "--html",
@@ -463,6 +479,7 @@ def sweep(
     param_specs: tuple[str, ...],
     margin: float,
     rerun: bool,
+    concurrency: int,
     html_path: Path | None,
     markdown_path: Path | None,
 ) -> None:
@@ -512,6 +529,7 @@ def sweep(
                 base_url=endpoint.base_url,
                 api_key_env=endpoint.api_key_env,
                 params=params,
+                concurrency=concurrency,
             )
         except (UnknownModelError, ValueError) as err:
             raise click.ClickException(f"{m}: {err}") from err

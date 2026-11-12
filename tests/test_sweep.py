@@ -185,4 +185,6 @@ def test_cli_sweep_uses_endpoints_from_prices_yaml(
             ],
         )
     assert result.exit_code == 0, result.output
-    made.assert_any_call(base_url="https://api.groq.com/openai/v1", api_key="gsk_test")
+    made.assert_any_call(
+        base_url="https://api.groq.com/openai/v1", api_key="gsk_test", max_retries=5
+    )

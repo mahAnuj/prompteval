@@ -192,6 +192,9 @@ def test_run_progress_shows_each_example(tmp_path: Path, monkeypatch: pytest.Mon
             ["run", "--prompt", str(prompt), "--tag", "baseline", "--eval-file", str(eval_file)],
         )
 
-    assert "[1/3] ex-0" in result.output
-    assert "[2/3] ex-1" in result.output
-    assert "[3/3] ex-2" in result.output
+    # Examples run concurrently, so they finish in any order (#13): every
+    # counter and every example appears exactly once.
+    for counter in ("[1/3]", "[2/3]", "[3/3]"):
+        assert result.output.count(counter) == 1
+    for ex_id in ("ex-0", "ex-1", "ex-2"):
+        assert result.output.count(f" {ex_id} ") == 1

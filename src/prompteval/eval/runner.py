@@ -33,6 +33,7 @@ import os
 import re
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -320,6 +321,7 @@ def run_eval(
     base_url: str | None = None,
     api_key_env: str | None = None,
     params: dict[str, Any] | None = None,
+    concurrency: int = 1,
 ) -> RunResult:
     """Execute `eval_def` against the prompt at `prompt_path`.
 
@@ -333,6 +335,10 @@ def run_eval(
 
     `prices` adds or overrides model prices (user `prices.yaml` / `--price`),
     and `base_url` / `api_key_env` override the Eval's endpoint (#8).
+
+    `concurrency` runs that many examples at once (threads); results keep
+    dataset order. Rate limits and 5xx responses are retried with backoff by
+    the openai client (`max_retries`), honouring Retry-After.
 
     `progress` is called once per example with `(index, total, example_id,
     latency_s, error)`. Pass a Click `echo`-flavored callback to render
@@ -355,9 +361,8 @@ def run_eval(
     )
 
     started_at = _now_iso()
-    results: list[ExampleResult] = []
 
-    for i, example in enumerate(examples, start=1):
+    def run_one(example: Example) -> ExampleResult:
         t0 = time.perf_counter()
         error: str | None = None
         output = ""
@@ -384,20 +389,31 @@ def run_eval(
 
         if latency_s is None:  # the runner itself failed: time until the failure
             latency_s = time.perf_counter() - t0
-        results.append(
-            ExampleResult(
-                id=example.id,
-                input=example.input,
-                expected=example.expected,
-                output=output,
-                scores=scores,
-                cost=cost,
-                latency_s=latency_s,
-                error=error,
-            )
+        return ExampleResult(
+            id=example.id,
+            input=example.input,
+            expected=example.expected,
+            output=output,
+            scores=scores,
+            cost=cost,
+            latency_s=latency_s,
+            error=error,
         )
-        if progress is not None:
-            progress(i, len(examples), example.id, latency_s, error)
+
+    # Several examples at once (#13); results stay in dataset order whatever
+    # order they finish in, so saved runs are deterministic.
+    slots: list[ExampleResult | None] = [None] * len(examples)
+    done = 0
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        futures = {pool.submit(run_one, ex): idx for idx, ex in enumerate(examples)}
+        for future in as_completed(futures):
+            idx = futures[future]
+            result = future.result()
+            slots[idx] = result
+            done += 1
+            if progress is not None:
+                progress(done, len(examples), result.id, result.latency_s, result.error)
+    results = [r for r in slots if r is not None]
 
     finished_at = _now_iso()
 
@@ -429,11 +445,17 @@ def _make_client(base_url: str | None, api_key_env: str | None) -> Any:
         key = os.environ.get(api_key_env)
         if not key:
             raise ValueError(f"Environment variable {api_key_env} is not set (the API key).")
-        return OpenAI(base_url=base_url, api_key=key)
+        return OpenAI(base_url=base_url, api_key=key, max_retries=_MAX_RETRIES)
     if base_url and not os.environ.get("OPENAI_API_KEY"):
         # Local servers such as Ollama need no key, but the client insists on one.
-        return OpenAI(base_url=base_url, api_key="not-needed")
-    return OpenAI(base_url=base_url)
+        return OpenAI(base_url=base_url, api_key="not-needed", max_retries=_MAX_RETRIES)
+    return OpenAI(base_url=base_url, max_retries=_MAX_RETRIES)
+
+
+#: Retries on 429 / 5xx / connection errors, with the client's exponential
+#: backoff (it honours Retry-After). More than the default 2, because running
+#: several examples at once makes rate limits likely (#13).
+_MAX_RETRIES = 5
 
 
 # ---------------------------------------------------------------------------

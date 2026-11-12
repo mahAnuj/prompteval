@@ -484,3 +484,39 @@ def test_run_records_dataset_fingerprint_and_it_survives_reload(tmp_path: Path) 
     del raw["dataset_sha256"]
     path.write_text(_json.dumps(raw))
     assert load_run("t", runs_dir=tmp_path / "runs").dataset_sha256 is None
+
+
+def test_concurrent_run_keeps_dataset_order_and_is_faster(tmp_path: Path) -> None:
+    # #13: examples run at once, results stay in dataset order.
+    import time as _time
+
+    rows = [{"id": f"e{i}", "input": str(i)} for i in range(8)]
+    dataset = _write_dataset(tmp_path, rows)
+    prompt = _write_prompt(tmp_path)
+    client = _mock_openai_client()
+    completion = client.chat.completions.create.return_value
+
+    def slow_create(**kwargs: Any) -> Any:
+        # Later examples finish first, to prove the order is restored.
+        _time.sleep(0.05 * (8 - int(kwargs["messages"][-1]["content"])) / 8 + 0.05)
+        return completion
+
+    client.chat.completions.create.side_effect = slow_create
+    t0 = _time.perf_counter()
+    result = run_eval(
+        Eval(name="e", dataset=dataset, scorers=[always_one]),
+        prompt_path=prompt,
+        tag="t",
+        client=client,
+        concurrency=8,
+    )
+    elapsed = _time.perf_counter() - t0
+    assert [e.id for e in result.examples] == [f"e{i}" for i in range(8)]
+    assert elapsed < 0.4  # sequential would be ~0.6s
+    assert client.chat.completions.create.call_count == 8
+
+
+def test_client_retries_more_than_the_default() -> None:
+    from prompteval.eval.runner import _make_client
+
+    assert _make_client("http://localhost:11434/v1", None).max_retries == 5

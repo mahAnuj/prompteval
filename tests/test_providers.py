@@ -131,7 +131,9 @@ def test_cli_runs_an_unlisted_model_with_a_price(
             ],
         )
     assert result.exit_code == 0, result.output
-    made.assert_called_once_with(base_url="https://api.groq.com/openai/v1", api_key="gsk_test")
+    made.assert_called_once_with(
+        base_url="https://api.groq.com/openai/v1", api_key="gsk_test", max_retries=5
+    )
     data = json.loads((tmp_path / ".prompteval/runs/groq.json").read_text())
     # 50 prompt tokens at $1M per 1M tokens = $50 per example.
     assert data["examples"][0]["cost"]["total_cost"] == pytest.approx(50.0)
