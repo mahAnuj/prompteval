@@ -1,0 +1,50 @@
+# Refreshes the bundled price catalog (src/prompteval/cost/catalog.json) from
+# LiteLLM's price list and OpenRouter's model list, and opens a pull request
+# when prices changed. Weekly, and on demand.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" in the
+# repository's Settings -> Actions -> General, or the PR step fails.
+name: Refresh model prices
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --dev
+      - name: Fetch current prices
+        env:
+          PROMPTEVAL_CACHE_DIR: ${{ runner.temp }}/prompteval
+        run: |
+          uv run prompteval models update
+          cp "$PROMPTEVAL_CACHE_DIR/catalog.json" src/prompteval/cost/catalog.json
+      - name: Test against the new prices
+        run: uv run pytest -q
+      - name: Open a pull request if prices changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- src/prompteval/cost/catalog.json; then
+            echo "Prices unchanged."
+            exit 0
+          fi
+          branch="prices/$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add src/prompteval/cost/catalog.json
+          git commit -m "Refresh model prices ($(date -u +%Y-%m-%d))"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Refresh model prices ($(date -u +%Y-%m-%d))" \
+            --body "Weekly refresh of the bundled price catalog from LiteLLM's price list and OpenRouter's model list. Tests passed against the new prices."
