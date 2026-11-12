@@ -10,7 +10,7 @@ name: release
 #
 # Release: bump src/prompteval/version.py and pyproject.toml, then
 #   git tag v0.2.0 && git push origin v0.2.0
-# Then move the Action's major tag: git tag -f v1 && git push -f origin v1
+# major-tag.yml then moves the Action's v1 tag to it automatically.
 
 # Only full version tags (v0.2.0). The Action's moving major tag (v1) also
 # starts with "v" and must not trigger a release.
