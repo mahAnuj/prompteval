@@ -12,6 +12,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -247,6 +248,15 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="A prices.yaml of your own (default: prices.yaml next to the eval file, if present).",
 )
+@click.option(
+    "--param",
+    "param_specs",
+    multiple=True,
+    help=(
+        "Request setting sent with every call, repeatable: --param temperature=0 "
+        "--param max_tokens=300. Values are read as JSON when they parse, else as text."
+    ),
+)
 def run(
     prompt_path: Path,
     tag: str,
@@ -256,6 +266,7 @@ def run(
     api_key_env: str | None,
     price_spec: str | None,
     prices_file: Path | None,
+    param_specs: tuple[str, ...],
 ) -> None:
     """Run an Eval against a prompt and persist the results.
 
@@ -296,6 +307,7 @@ def run(
             prices=prices,
             base_url=base_url,
             api_key_env=api_key_env,
+            params=_parse_params(param_specs),
         )
     except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
@@ -314,6 +326,20 @@ def run(
     click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
     click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
     click.echo(f"saved to: {saved_path}")
+
+
+def _parse_params(specs: tuple[str, ...]) -> dict[str, Any]:
+    """`key=value` pairs; values are JSON when they parse (0, 0.2, true, {...}), else text."""
+    out: dict[str, Any] = {}
+    for spec in specs:
+        key, sep, raw = spec.partition("=")
+        if not sep or not key.strip():
+            raise click.ClickException(f"Invalid --param {spec!r}: expected key=value.")
+        try:
+            out[key.strip()] = json.loads(raw)
+        except json.JSONDecodeError:
+            out[key.strip()] = raw
+    return out
 
 
 def _discover_eval(eval_file: Path) -> Eval:

@@ -87,6 +87,23 @@ Paste prompts into `prompts/v1.txt` and `prompts/v2.txt`. Add 10–30 examples t
 
 The `expected` field is whatever your scorers want — there's no fixed schema.
 
+**Prompts with variables.** If your prompt is a template, write it as one:
+`Summarise this ticket for {customer}: {input}`. Each `{name}` is filled from
+the example's `input` and an optional `vars` object, and the filled prompt is
+sent as the user message (a prompt with no placeholders is sent as the system
+message, with `input` as the user message). JSON in a prompt is left alone,
+and `{{name}}` stays a literal `{name}`.
+
+```jsonl
+{"id": "t-1", "input": "Item arrived broken", "vars": {"customer": "Asha"}, "expected": {"must_mention": ["refund"]}}
+```
+
+**Request settings** such as `temperature`, `max_tokens` or JSON mode go on the
+eval, `Eval(..., params={"temperature": 0, "max_tokens": 300})`, or on a run,
+`--param max_tokens=300`. They are saved with the run, and `compare` warns when
+two runs used different settings, because `max_tokens` is one of the most
+effective cost levers there is and is worth evaluating on its own.
+
 ### 4. Define what "good" means for your use case (scorers)
 
 `eval.py` ships with three example scorers. Edit them, write new ones, or copy from templates:
@@ -229,7 +246,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **246/246 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **256/256 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

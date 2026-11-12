@@ -26,9 +26,11 @@ don't force a shape change. See IMPLEMENTATION_PLAN.md.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -54,6 +56,8 @@ class Example:
     id: str
     input: str
     expected: dict[str, Any] = field(default_factory=dict)
+    # Values for `{name}` placeholders in the prompt, besides `{input}` (#10).
+    vars: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,7 @@ class RunResult:
     # Where the run went and how it was priced (#8); None for older runs.
     base_url: str | None = None
     price_source: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)  # request settings used (#10)
 
     @property
     def total_cost(self) -> float:
@@ -174,6 +179,9 @@ class Eval:
     # Name of the environment variable holding that endpoint's key, e.g.
     # "GROQ_API_KEY". None = OPENAI_API_KEY (the openai client's default).
     api_key_env: str | None = None
+    # Extra request settings sent with every call (#10), e.g.
+    # {"temperature": 0, "max_tokens": 300, "response_format": {"type": "json_object"}}.
+    params: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.scorers:
@@ -191,13 +199,61 @@ class Eval:
 # ---------------------------------------------------------------------------
 
 
+_VAR = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})")
+_ESCAPED_VAR = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
+
+
+def prompt_variables(prompt_text: str) -> list[str]:
+    """Names of the `{name}` placeholders in a prompt, in order of first use.
+
+    Only `{identifier}` counts, so JSON in a prompt (`{"key": 1}`) is left
+    alone. `{{name}}` is an escaped, literal `{name}`.
+    """
+    seen: dict[str, None] = {}
+    for m in _VAR.finditer(prompt_text):
+        seen.setdefault(m.group(1), None)
+    return list(seen)
+
+
+def fill_prompt(prompt_text: str, values: dict[str, Any]) -> str:
+    """Replace each `{name}` with `values[name]`; `{{name}}` becomes `{name}`.
+
+    Raises KeyError naming the first missing variable.
+    """
+    missing = [v for v in prompt_variables(prompt_text) if v not in values]
+    if missing:
+        raise KeyError(
+            f"prompt variable {missing[0]!r} has no value: add it to this example's "
+            f"'vars' (available: {', '.join(sorted(values)) or 'none'})"
+        )
+    filled = _VAR.sub(lambda m: str(values[m.group(1)]), prompt_text)
+    return _ESCAPED_VAR.sub(lambda m: "{" + m.group(1) + "}", filled)
+
+
+def build_messages(prompt_text: str, example: Example) -> list[dict[str, str]]:
+    """The messages for one example.
+
+    A plain prompt is the system message and the example's input the user
+    message. A prompt with `{placeholders}` is a template: it is filled from
+    `input` and the example's `vars`, and sent as the user message.
+    """
+    if prompt_variables(prompt_text):
+        values: dict[str, Any] = {"input": example.input, **example.vars}
+        return [{"role": "user", "content": fill_prompt(prompt_text, values)}]
+    return [
+        {"role": "system", "content": prompt_text},
+        {"role": "user", "content": example.input},
+    ]
+
+
 def default_runner(
     example: Example,
     prompt_text: str,
     model: str,
     client: Any,
+    params: dict[str, Any] | None = None,
 ) -> RunnerResult:
-    """Send `prompt_text` as system + `example.input` as user, one OpenAI call.
+    """One chat completion per example (see `build_messages` for the shape).
 
     Returns the response text + a single Usage. Cached/reasoning token counts
     are pulled from `prompt_tokens_details` / `completion_tokens_details` when
@@ -205,10 +261,8 @@ def default_runner(
     """
     response = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": prompt_text},
-            {"role": "user", "content": example.input},
-        ],
+        messages=build_messages(prompt_text, example),
+        **(params or {}),
     )
 
     output = response.choices[0].message.content or ""
@@ -250,6 +304,7 @@ def run_eval(
     prices: Mapping[str, ModelPricing] | None = None,
     base_url: str | None = None,
     api_key_env: str | None = None,
+    params: dict[str, Any] | None = None,
 ) -> RunResult:
     """Execute `eval_def` against the prompt at `prompt_path`.
 
@@ -274,7 +329,8 @@ def run_eval(
     pricing = resolve_pricing(effective_model, prices)
     effective_base_url = base_url or eval_def.base_url
     examples = _load_dataset(Path(eval_def.dataset))
-    runner = eval_def.runner or default_runner
+    effective_params = {**eval_def.params, **(params or {})}
+    runner: Runner = eval_def.runner or functools.partial(default_runner, params=effective_params)
     eff_client = (
         client
         if client is not None
@@ -339,6 +395,7 @@ def run_eval(
         examples=results,
         dataset_sha256=hashlib.sha256(Path(eval_def.dataset).read_bytes()).hexdigest(),
         base_url=effective_base_url,
+        params=effective_params,
         price_source=(
             f"user-supplied ({pricing.notes or 'custom'})"
             if prices and effective_model in prices
@@ -417,6 +474,8 @@ def _load_dataset(path: Path) -> list[Example]:
                 raise ValueError(f"{path}:{lineno}: invalid JSON ({err})") from err
             if not isinstance(obj, dict):
                 raise ValueError(f"{path}:{lineno}: expected an object, got {type(obj).__name__}")
+            if "vars" in obj and not isinstance(obj["vars"], dict):
+                raise ValueError(f"{path}:{lineno}: 'vars' must be an object")
             for required in ("id", "input"):
                 if required not in obj:
                     raise ValueError(f"{path}:{lineno}: missing required field {required!r}")
@@ -429,6 +488,7 @@ def _load_dataset(path: Path) -> list[Example]:
                     id=example_id,
                     input=str(obj["input"]),
                     expected=obj.get("expected", {}) or {},
+                    vars=obj.get("vars", {}) or {},
                 )
             )
     if not examples:

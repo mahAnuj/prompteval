@@ -545,6 +545,11 @@ def _compatibility_warnings(run_a: RunResult, run_b: RunResult) -> tuple[str, ..
             f"{only_a} example(s) only in {run_a.tag!r} and {only_b} only in {run_b.tag!r} "
             "were left out"
         )
+    if run_a.params != run_b.params:
+        out.append(
+            f"the request settings differ ({run_a.params or 'defaults'} vs "
+            f"{run_b.params or 'defaults'}): they are part of what is being compared"
+        )
     if run_a.model != run_b.model:
         out.append(
             f"the models differ ({run_a.model} vs {run_b.model}): this compares the model "
