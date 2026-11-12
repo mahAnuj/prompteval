@@ -110,6 +110,23 @@ evals/
 └── .env.example            # OPENAI_API_KEY=...
 ```
 
+**Or let AI draft the examples and scorers for you to edit:**
+
+```bash
+prompteval bootstrap --prompt prompts/v1.txt          # invents ~25 inputs
+prompteval bootstrap --prompt prompts/v1.txt --from evals/dataset.jsonl   # uses your real ones
+```
+
+One model call (cost shown before it runs, on your key) drafts `dataset.jsonl`
+(typical, edge and adversarial cases), `eval.py` and `BOOTSTRAP.md`. Hard rules
+your prompt states become plain code checks (required phrases, JSON keys,
+length limits); the subjective part gets one LLM-judge rubric you can edit.
+The AI supplies only data: prompteval writes `eval.py` from a fixed template,
+so no generated code runs. Every file starts with a DRAFT line that `run`
+warns about until you delete it, invented inputs are marked synthetic (and
+`compare` says how many there are), and the generator is named so you can
+evaluate with a different model.
+
 ### 3. Bring your prompts + a few examples
 
 Paste prompts into `prompts/v1.txt` and `prompts/v2.txt`. Add 10–30 examples to `dataset.jsonl`:
@@ -394,7 +411,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**318/318 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**326/326 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

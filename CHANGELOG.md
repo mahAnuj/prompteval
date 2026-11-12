@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `prompteval bootstrap`: an AI-drafted dataset (typical, edge, adversarial)
+  and eval for you to review. Hard rules in the prompt become stock code
+  checks, the subjective part one editable judge rubric; the generator returns
+  data only and `eval.py` comes from a fixed template. DRAFT markers until
+  reviewed, synthetic examples tagged, cost shown first, never overwrites;
+  `--from` drafts expectations for real inputs (#20).
 - `prompteval dataset import`: build dataset.jsonl from a CSV or JSONL export of
   real inputs, with column mapping, de-duplication, reproducible sampling and
   e-mail/phone masking, all local. Rows are marked `"source": "real"`, and

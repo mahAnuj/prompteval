@@ -19,6 +19,14 @@ from typing import Any
 
 import click
 
+from prompteval.bootstrap import (
+    DEFAULT_EVAL_MODEL,
+    DEFAULT_GENERATOR,
+    estimate_cost,
+    generate,
+    has_draft_marker,
+    write_files,
+)
 from prompteval.compare import (
     ComparisonReport,
     compute_comparison,
@@ -45,6 +53,7 @@ from prompteval.cost import (
     ModelEndpoint,
     ModelPricing,
     UnknownModelError,
+    compute_cost,
     list_models,
     load_model_endpoints,
     load_price_file,
@@ -63,7 +72,7 @@ from prompteval.dataset_import import (
 from prompteval.dotenv import load_env_files
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
-from prompteval.eval.runner import RunResult, _make_client
+from prompteval.eval.runner import RunResult, _load_dataset, _make_client
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
 from prompteval.version import __version__
@@ -126,6 +135,122 @@ def init(directory: str, force: bool) -> None:
     click.echo("  prompteval run --prompt prompts/v1.txt --tag baseline")
     click.echo("  prompteval run --prompt prompts/v2.txt --tag short-prompt")
     click.echo("  prompteval compare baseline short-prompt")
+
+
+@main.command("bootstrap")
+@click.option(
+    "--prompt",
+    "prompt_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The prompt to draft an eval for.",
+)
+@click.option(
+    "--examples", "n_examples", type=click.IntRange(3, 100), default=25, show_default=True
+)
+@click.option(
+    "--from",
+    "seed_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Draft expectations for the real inputs in this dataset.jsonl, not invented ones.",
+)
+@click.option(
+    "--model", "generator", default=DEFAULT_GENERATOR, show_default=True, help="Generator model."
+)
+@click.option(
+    "--eval-model",
+    default=DEFAULT_EVAL_MODEL,
+    show_default=True,
+    help="Model the drafted eval runs.",
+)
+@click.option("--base-url", default=None, help="OpenAI-compatible endpoint for the generator.")
+@click.option("--api-key-env", default=None, help="Env var holding the generator endpoint's key.")
+@click.option(
+    "--out-dir",
+    default="evals",
+    show_default=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--force", is_flag=True, help="Replace existing files.")
+@click.option("--yes", is_flag=True, help="Don't ask before spending on the generator call.")
+def bootstrap_cmd(
+    prompt_path: Path,
+    n_examples: int,
+    seed_file: Path | None,
+    generator: str,
+    eval_model: str,
+    base_url: str | None,
+    api_key_env: str | None,
+    out_dir: Path,
+    force: bool,
+    yes: bool,
+) -> None:
+    """Draft a dataset and scorers from your prompt, for you to review and edit.
+
+    One model call (on your key) returns example inputs and expectations, the
+    hard rules your prompt states, and a judge rubric. prompteval writes
+    dataset.jsonl, eval.py and BOOTSTRAP.md from fixed templates (no generated
+    code runs), each marked DRAFT until you review it.
+    """
+    targets = [out_dir / "dataset.jsonl", out_dir / "eval.py", out_dir / "BOOTSTRAP.md"]
+    existing = [str(p) for p in targets if p.exists()]
+    if existing and not force:
+        raise click.ClickException(
+            f"{', '.join(existing)} already exist; pass --force to replace them"
+        )
+    seed_inputs: list[str] | None = None
+    seeded_ids: list[str] | None = None
+    if seed_file is not None:
+        try:
+            seeded = _load_dataset(seed_file)
+        except ValueError as err:
+            raise click.ClickException(str(err)) from err
+        seeded = seeded[:100]
+        seed_inputs = [e.input for e in seeded]
+        seeded_ids = [e.id for e in seeded]
+    prompt_text = prompt_path.read_text()
+    n = len(seed_inputs) if seed_inputs else n_examples
+    estimate = estimate_cost(prompt_text, n, generator)
+    shown = "unknown (model has no known price)" if estimate is None else f"about ${estimate:.4f}"
+    click.echo(f"One call to {generator}, {shown}, to draft {n} examples and scorers.")
+    if eval_model == generator:
+        click.echo(
+            f"note: the drafted eval runs {eval_model}, the same model that writes it; "
+            "use --eval-model with a different one if you can."
+        )
+    if not yes and not click.confirm("Continue?", default=True):
+        raise click.Abort()
+    try:
+        draft = generate(
+            prompt_text,
+            client=_make_client(base_url, api_key_env),
+            n=n,
+            model=generator,
+            seed_inputs=seed_inputs,
+        )
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+    try:
+        pricing = resolve_pricing(generator, None, base_url)
+        cost: float | None = compute_cost(generator, draft.usage, pricing).total_cost
+    except UnknownModelError:
+        cost = None
+    try:
+        paths = write_files(
+            draft, out_dir, cost=cost, eval_model=eval_model, seeded_ids=seeded_ids, force=force
+        )
+    except FileExistsError as err:
+        raise click.ClickException(str(err)) from err
+    click.echo(f"Drafted {len(draft.examples)} examples. Wrote:")
+    for p in paths:
+        click.echo(f"  {p}")
+    click.echo("")
+    click.echo(f"Read {out_dir / 'BOOTSTRAP.md'} first. Each file starts with a DRAFT line;")
+    click.echo("delete it once you've checked the file. Then:")
+    click.echo(
+        f"  prompteval run --prompt {prompt_path} --tag baseline --eval-file {out_dir / 'eval.py'}"
+    )
 
 
 @main.group()
@@ -456,6 +581,12 @@ def run(
     eval_def = _discover_eval(eval_file)
     model = model_override or eval_def.model
     dataset_path = Path(eval_def.dataset)
+    drafts = [str(p) for p in (eval_file, dataset_path) if has_draft_marker(p)]
+    if drafts:
+        click.echo(
+            f"warning: {', '.join(drafts)} still marked DRAFT (from `prompteval bootstrap`); "
+            "review it and delete the first line to accept it."
+        )
 
     # The multiplication sign in the f-string is intentional — matches the
     # README's killer-output spec so users see consistent run-header phrasing.
