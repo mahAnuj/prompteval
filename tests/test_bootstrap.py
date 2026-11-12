@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from prompteval.bootstrap import (
     DRAFT_MARKER,
+    _dataset_rows,
     estimate_cost,
     generate,
     has_draft_marker,
@@ -222,3 +223,42 @@ def test_older_reply_shape_with_a_rubric_still_gives_criteria() -> None:
     draft = generate(PROMPT, client=_reply({**old, "judge_rubric": "Rate warmth 0-1."}), n=5)
     assert draft.criteria == ["Rate warmth 0-1."]
     assert len(generate(PROMPT, client=_reply(old), n=5).criteria) == 3  # safe defaults
+
+
+def test_drafted_judge_sees_the_request_and_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#26: the drafted follows_instructions scorer passes input and prompt to the judge."""
+    from prompteval.eval.runner import _call_scorer
+
+    monkeypatch.chdir(tmp_path)
+    draft = generate(PROMPT, client=_reply(GOOD), n=5)
+    _, ev, _, _ = write_files(draft, tmp_path / "evals", cost=None)
+    judged = _discover_eval(ev).scorers[-1]
+    judge = _reply("0.9")
+    with patch("prompteval.eval.judge._get_default_client", return_value=judge):
+        out = _call_scorer(
+            judged, _load_dataset(tmp_path / "evals" / "dataset.jsonl")[0], "ok", PROMPT
+        )
+    assert out.score == 0.9
+    user = judge.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "My kettle arrived cracked" in user and PROMPT.strip()[:30] in user
+
+
+def test_word_limits_are_words_not_characters() -> None:
+    """Found in a real run: "under 150 words" became max_len=150 characters, so every
+    reply failed. Word limits now have their own keys and length_between reads them."""
+    from prompteval.eval import stock
+
+    payload = {
+        **GOOD,
+        "checks": {"must_mention": False, "json_keys": False, "length": True},
+        "examples": [{"input": "Write my summary", "max_words": 150, "max_len": None}],
+    }
+    draft = generate(PROMPT, client=_reply(payload), n=3)
+    rows = [r for r in _dataset_rows(draft, None)]
+    assert rows[0]["expected"] == {"max_words": 150}
+    reply = "word " * 120  # 600 characters, 120 words
+    assert stock.length_between(reply, rows[0]["expected"]) == 1.0
+    assert stock.length_between(reply * 2, rows[0]["expected"]) == 0.0
+    assert stock.length_between(reply, {"max_len": 150}) == 0.0  # characters still mean characters

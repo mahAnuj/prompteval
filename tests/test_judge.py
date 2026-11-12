@@ -113,3 +113,55 @@ def test_handles_none_content_gracefully() -> None:
     client.chat.completions.create.return_value = completion
     with pytest.raises(LLMJudgeError):
         llm_judge("rate it", "some text", client=client)
+
+
+def test_judge_can_see_the_request_and_the_instructions() -> None:
+    """#26: without them a judge cannot tell an invented fact from a given one."""
+    client = _mock_client("0.5")
+    llm_judge(
+        "rubric",
+        "Your Moon is in Taurus.",
+        client=client,
+        input="Moon sign: Cancer",
+        instructions="Use only the chart data given.",
+    )
+    user = client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "The assistant's instructions:\n<<<\nUse only the chart data given.\n>>>" in user
+    assert "The user's request:\n<<<\nMoon sign: Cancer\n>>>" in user
+    assert user.endswith("The reply to score:\n<<<\nYour Moon is in Taurus.\n>>>")
+
+
+def test_scorers_can_ask_for_the_prompt(tmp_path: Any) -> None:
+    from prompteval.eval.runner import Example, _call_scorer
+    from prompteval.eval.scorer import scorer
+
+    seen: dict[str, str] = {}
+
+    @scorer
+    def judged(output: str, input: str, prompt: str) -> float:
+        seen.update(output=output, input=input, prompt=prompt)
+        return 1.0
+
+    ex = Example(id="a", input="Moon sign: Cancer", vars={"lang": "Hindi"})
+    _call_scorer(judged, ex, "reply", "Answer in {lang}.")
+    assert seen == {"output": "reply", "input": "Moon sign: Cancer", "prompt": "Answer in Hindi."}
+
+
+@pytest.mark.parametrize(
+    ("reply", "score"),
+    [
+        # Real reply shape (Claude Sonnet, 2026-11-12): counting words first.
+        ("Count words: reply is likely ~190 words. Fails criterion 6.\n\nFinal score: 0.4", 0.4),
+        ("Reasoning: 3 of 4 rules met, 150 words.\n0.75", 0.75),
+        ("Score: 0.7", 0.7),
+        ("0.5 (reasoning: confidence is 0.8)", 0.5),
+        ("Over by 40 words.\nScore = 1", 1.0),
+    ],
+)
+def test_scores_are_read_from_where_the_judge_puts_them(reply: str, score: float) -> None:
+    assert llm_judge("rate it", "text", client=_mock_client(reply)) == score
+
+
+def test_a_judge_that_thinks_out_loud_and_ends_out_of_range_still_fails() -> None:
+    with pytest.raises(LLMJudgeError):
+        llm_judge("rate it", "text", client=_mock_client("190 words.\nIt deserves 7"))

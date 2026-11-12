@@ -395,3 +395,30 @@ def test_run_saves_the_criteria_and_refuses_a_typo_before_spending(
         ok = CliRunner().invoke(main, [*base, "--tag", "t1", "--criteria", "kundli"])
     assert ok.exit_code == 0, ok.output
     assert load_run("t1").criteria == "kundli"
+
+
+# ---- #27: the judge says why, and the verdicts are kept for `prompteval ui` -----------
+
+
+def test_reasons_are_kept_and_the_judgement_is_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prompteval.compare.pairwise import _reason
+
+    assert _reason("B\nB follows rule 1; A invents a placement.") == (
+        "B follows rule 1; A invents a placement."
+    )
+    assert _reason("**TIE** - both equally good") == "both equally good"
+    assert _reason("A") == ""
+    monkeypatch.chdir(tmp_path)
+    save_run(_run("v1", ["bad"] * 3))
+    save_run(_run("v2", ["GOOD"] * 3))
+    client, seen = _capturing_judge("TIE\nboth meet every rule")
+    with patch("prompteval.eval.runner.OpenAI", return_value=client):
+        result = CliRunner().invoke(main, ["compare", "v1", "v2", "--pairwise"])
+    assert result.exit_code == 0, result.output
+    assert "one short sentence" in seen[0]["messages"][0]["content"]
+    saved = json.loads((tmp_path / ".prompteval" / "judgements" / "v1__vs__v2.json").read_text())
+    assert saved["baseline"] == "v1" and saved["candidate"] == "v2"
+    assert saved["details"]["e0"]["reason_first_order"] == "both meet every rule"
+    assert saved["scores"] == {"e0": 0.5, "e1": 0.5, "e2": 0.5}

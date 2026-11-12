@@ -44,7 +44,7 @@ into your `eval.py`. The keys each reads from `expected`:
 | `contains_substring` | 1 if the substring appears (case-sensitive) | `substring` |
 | `regex_match` | 1 if the regex matches anywhere | `pattern` |
 | `not_empty` | 1 if the output isn't blank | — |
-| `length_between` | 1 if the length is within bounds | `min_len`, `max_len` |
+| `length_between` | 1 if the length is within bounds | `min_len`, `max_len` (characters); `min_words`, `max_words` (words) |
 | `json_schema_valid` | 1 if valid JSON containing every required key | `required_keys` |
 | `mentions_required_terms` | share of required terms present (case-insensitive) | `must_mention` |
 | `llm_judge_tone` | judge's 0-1 rating of the tone | `tone` |

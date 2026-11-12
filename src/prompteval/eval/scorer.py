@@ -30,7 +30,9 @@ R = TypeVar("R", bound=Union[float, "ScorerResult"])
 #: Param names a scorer is allowed to declare. The runner passes only what each
 #: scorer asks for (signature-driven dispatch — keeps simple scorers terse and
 #: lets complex ones access more context without forcing all signatures to be wide).
-KNOWN_PARAMS = frozenset({"input", "output", "expected"})
+#: `prompt` is the system prompt the reply was produced with (#26), so a judge
+#: can check the reply against the rules it was given.
+KNOWN_PARAMS = frozenset({"input", "output", "expected", "prompt"})
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ def scorer(func: Callable[P, R]) -> Callable[P, R]:  # noqa: UP047 — ParamSpec
     """Mark `func` as a scorer.
 
     Validates that the function's parameter names are a subset of
-    `{input, output, expected}`. The Week-4 runner inspects the signature and
+    `{input, output, expected, prompt}`. The Week-4 runner inspects the signature and
     passes only the params each scorer declares — so `def my(output): ...` and
     `def my(input, output, expected): ...` are both valid scorers and the runner
     handles both.

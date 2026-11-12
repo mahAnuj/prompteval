@@ -40,11 +40,27 @@ _DEFAULT_CLIENT: OpenAI | None = None
 #: Ground rules every rubric starts from (#23): what the judge may and may not use.
 JUDGE_PREAMBLE = (
     "You are a strict, fair evaluator. Score the single reply you are given against the "
-    "rubric below and nothing else. Use only the information in the rubric and the reply: "
-    "do not assume facts that are not there, and treat anything the reply states that the "
-    "rubric contradicts as an error. Length is not quality. Reply with only a number "
-    "between 0 and 1."
+    "rubric below and nothing else. Use only the information you are given (the rubric, "
+    "and the assistant's instructions and the user's request when shown, and the reply): "
+    "do not assume facts that are not there, and treat anything the reply states that "
+    "they contradict, or that appears in none of them, as an error. Length is not quality. "
+    "Reply with only a number between 0 and 1."
 )
+
+
+def judge_message(text: str, input: str | None = None, instructions: str | None = None) -> str:
+    """What the per-reply judge reads (#26): the reply alone, or with the request and
+    the instructions it answered, so a rule like "uses only the data given" is checkable."""
+    if not input and not instructions:
+        return text
+    parts = []
+    if instructions:
+        parts.append(f"The assistant's instructions:\n<<<\n{instructions.strip()}\n>>>")
+    if input:
+        parts.append(f"The user's request:\n<<<\n{input.strip()}\n>>>")
+    parts.append(f"The reply to score:\n<<<\n{text}\n>>>")
+    return "\n\n".join(parts)
+
 
 #: (model, prompt tokens, completion tokens, cached tokens, reported cost or None)
 JudgeCall = tuple[str, int, int, int, float | None]
@@ -68,6 +84,8 @@ def llm_judge(
     model: str = "gpt-4o-mini",
     client: Any = None,
     temperature: float | None = 0.0,
+    input: str | None = None,
+    instructions: str | None = None,
 ) -> float:
     """Ask an LLM to score `text` against `rubric`. Returns a float in [0, 1].
 
@@ -78,6 +96,11 @@ def llm_judge(
 
     `client` is left untyped (Any) because mypy chokes on MagicMock injection
     in tests otherwise. Real usage passes a real OpenAI client or None.
+
+    Pass `input` (the user's request) and `instructions` (the prompt) whenever
+    the rubric depends on them (#26): without them the judge sees the reply
+    alone and cannot tell an invented fact from a given one. In a scorer, take
+    both as parameters: `def judged(output, input, prompt): ...`.
 
     `model` defaults to gpt-4o-mini — cheap enough that judge overhead stays
     negligible (~$0.0001 per typical judge call). Override if you want a
@@ -94,7 +117,7 @@ def llm_judge(
         model=model,
         messages=[
             {"role": "system", "content": f"{JUDGE_PREAMBLE}\n\nRubric:\n{rubric}"},
-            {"role": "user", "content": text},
+            {"role": "user", "content": judge_message(text, input, instructions)},
         ],
         **extra,
     )
@@ -132,20 +155,36 @@ def _get_default_client() -> OpenAI:
     return _DEFAULT_CLIENT
 
 
-def _parse_score(raw: str) -> float:
-    """Extract the first float in `raw` and validate it's in [0, 1].
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+_LABELLED = re.compile(r"(?i)\b(?:final\s+)?score\s*(?:is|=|:)?\s*\**\s*(-?\d+(?:\.\d+)?)")
 
-    Tolerates rubric responses like "0.8", "Score: 0.8", "0.8 — reason: ...".
-    Negative numbers parse as a number but fail the range check, so a
-    response of "-1" produces an LLMJudgeError, not a silent zero.
+
+def _parse_score(raw: str) -> float:
+    """Find the judge's score in `raw` and validate it's in [0, 1].
+
+    Tolerates "0.8", "Score: 0.8", "0.8 — reason: ...". Judges that think out
+    loud first ("reply is ~190 words ... Final score: 0.4") are read from the
+    end, where the score is, not from the first number they mention (#26:
+    found in a real run, where 190 was taken as the score). In order: a
+    labelled "score: x" (the last one), else the first number on the last
+    line that has one, when it is in [0, 1], else the first number anywhere.
+    A negative or >1 result is an LLMJudgeError, never a silent clamp.
     """
-    match = re.search(r"-?\d+(?:\.\d+)?", raw)
-    if match is None:
+    labelled = [float(m.group(1)) for m in _LABELLED.finditer(raw)]
+    lines = [line for line in raw.strip().splitlines() if _NUMBER.search(line)]
+    last_line = float(_NUMBER.findall(lines[-1])[0]) if len(lines) > 1 else None
+    first = _NUMBER.search(raw)
+    if labelled:
+        value = labelled[-1]
+    elif last_line is not None and 0.0 <= last_line <= 1.0:
+        value = last_line
+    elif first is not None:
+        value = float(first.group())
+    else:
         raise LLMJudgeError(
             f"Could not parse a number from judge response: {raw!r}. "
             "Check that your rubric instructs the judge to return only a number."
         )
-    value = float(match.group())
     if not 0.0 <= value <= 1.0:
         raise LLMJudgeError(
             f"Judge returned {value}, expected a score in [0, 1]. "

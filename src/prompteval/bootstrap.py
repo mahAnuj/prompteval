@@ -47,7 +47,8 @@ SHAPE = """Return a JSON object with exactly these keys:
     {"input": "<what a user would send>", "category": "typical" | "edge" | "adversarial",
      "must_mention": ["<phrase a good reply must contain>", ...],
      "required_keys": ["<JSON key a good reply must have>", ...],
-     "min_len": <int or null>, "max_len": <int or null>}
+     "min_len": <int or null>, "max_len": <int or null>,
+     "min_words": <int or null>, "max_words": <int or null>}
   ],
   "checks": {"must_mention": <bool>, "json_keys": <bool>, "length": <bool>},
   "rule_sources": {"must_mention": "<quote from the prompt or empty>",
@@ -55,6 +56,8 @@ SHAPE = """Return a JSON object with exactly these keys:
   "criteria": ["<one rule a judge can check in a reply, most important first>", ...],
   "notes": "<2-4 sentences: what you assumed and what the user should check first>"
 }
+min_len / max_len are CHARACTERS; use them only for a limit the prompt states in characters.
+A limit in words ("under 150 words") goes in min_words / max_words instead.
 Turn on a check only when the prompt itself states that rule. Leave lists empty when a
 check is off.
 "criteria" are 4 to 8 rules, in priority order, for judging which of two replies is better:
@@ -163,6 +166,8 @@ def generate(
                 "required_keys": _strings(item.get("required_keys")),
                 "min_len": _length(item.get("min_len")),
                 "max_len": _length(item.get("max_len")),
+                "min_words": _length(item.get("min_words")),
+                "max_words": _length(item.get("max_words")),
             }
         )
     if seed_inputs:
@@ -219,6 +224,10 @@ def _dataset_rows(draft: Draft, seeded_ids: list[str] | None) -> list[dict[str, 
                 expected["min_len"] = ex["min_len"]
             if ex["max_len"] is not None:
                 expected["max_len"] = ex["max_len"]
+            if ex["min_words"] is not None:
+                expected["min_words"] = ex["min_words"]
+            if ex["max_words"] is not None:
+                expected["max_words"] = ex["max_words"]
         rows.append(
             {
                 "id": seeded_ids[i] if seeded_ids else f"draft-{i + 1:02d}",
@@ -271,11 +280,11 @@ def _eval_py(
             f"JUDGE_MODEL = {json.dumps(judge_model or 'claude-sonnet-5-5')}\n"
             "_judge_client = ClaudeCodeClient()\n"
         )
-        judge_args = ", model=JUDGE_MODEL, client=_judge_client"
+        judge_kwargs = "\n        model=JUDGE_MODEL,\n        client=_judge_client,"
         base_url_line = '\n    base_url="claude-code",'
     else:
         judge_setup = ""
-        judge_args = ""
+        judge_kwargs = ""
         base_url_line = f"\n    base_url={json.dumps(base_url)}," if base_url else ""
     scorers = ", ".join([*stock, "follows_instructions"])
     return f'''{DRAFT_LINE}
@@ -296,9 +305,15 @@ CRITERIA = {json.dumps(name)}
 
 
 @scorer
-def follows_instructions(output: str) -> float:
-    """LLM judge: scores the reply against criteria/{name}.md."""
-    return llm_judge(rubric=criteria_rubric(CRITERIA), text=output{judge_args})
+def follows_instructions(output: str, input: str, prompt: str) -> float:
+    """LLM judge: scores the reply against criteria/{name}.md. It sees the request
+    and the prompt too, so it can tell an invented fact from a given one."""
+    return llm_judge(
+        rubric=criteria_rubric(CRITERIA),
+        text=output,
+        input=input,
+        instructions=prompt,{judge_kwargs}
+    )
 
 
 eval = Eval(

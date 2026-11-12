@@ -455,7 +455,10 @@ def run_eval(
                 token = JUDGE_CALLS.set(judge_calls)
                 try:
                     per_attempt.append(
-                        [_call_scorer(s, example, runner_result.output) for s in eval_def.scorers]
+                        [
+                            _call_scorer(s, example, runner_result.output, prompt_text)
+                            for s in eval_def.scorers
+                        ]
                     )
                 finally:
                     JUDGE_CALLS.reset(token)
@@ -573,13 +576,20 @@ def _call_scorer(
     s: Callable[..., float | ScorerResult],
     example: Example,
     output: str,
+    prompt: str = "",
 ) -> ScoreOutcome:
-    """Invoke `s` with the subset of (input, output, expected) it declares."""
-    available = {
+    """Invoke `s` with the subset of (input, output, expected, prompt) it declares."""
+    available: dict[str, Any] = {
         "input": example.input,
         "output": output,
         "expected": example.expected,
     }
+    if "prompt" in scorer_params(s):
+        # The system prompt as the model saw it, placeholders filled when they can be.
+        try:
+            available["prompt"] = fill_prompt(prompt, {**example.vars, "input": example.input})
+        except (KeyError, ValueError):
+            available["prompt"] = prompt
     declared = scorer_params(s)
     kwargs = {k: v for k, v in available.items() if k in declared}
 

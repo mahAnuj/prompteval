@@ -2,6 +2,25 @@
 
 ## 0.3.0 — 2026-11-12
 
+- `prompteval ui`: a local page (127.0.0.1 only, no account, never calls a
+  model) to compare two runs example by example, answers side by side with
+  each scorer's score and the judge's verdict and reason, filter to the
+  losses and flips, browse runs, and edit criteria (#27). The pairwise judge
+  now gives a one-line reason, and `compare --pairwise` keeps each judgement
+  in `.prompteval/judgements/`.
+- The per-reply judge can see the request and the prompt (#26). It used to
+  see the reply alone, so it could not tell an invented fact from a given one
+  (in a real kundli run it scored a prompt that invents placements and pushes
+  remedies 0.67 against 0.80; with the request and prompt, 0.09 against
+  0.82). `llm_judge(..., input=, instructions=)`; scorers may now ask for
+  `prompt`; the scorer `bootstrap` drafts passes both.
+- Found in the same real runs: a judge that reasons before scoring ("~190
+  words … Final score: 0.4") had its first number, 190, taken as the score;
+  the score is now read from a labelled score or the last line. And
+  `bootstrap` turned "under 150 words" into a 150-character limit that every
+  reply failed; word limits are now `min_words` / `max_words`, which
+  `length_between` reads.
+
 - You decide which criteria judge which prompt (#25). `run --criteria NAME`
   saves the choice on the run (checked before any model call), a file named
   after the prompt file is matched automatically

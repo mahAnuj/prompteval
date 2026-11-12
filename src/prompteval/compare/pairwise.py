@@ -22,7 +22,9 @@ from __future__ import annotations
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from prompteval.cost import ModelPricing, UnknownModelError, Usage, compute_cost, resolve_pricing
@@ -74,7 +76,8 @@ def judge_system(criteria: str | None = None) -> str:
     lines += [
         "",
         "If both answers are equally good or equally flawed, the result is a tie. "
-        "Reply with exactly one word: A, B or TIE.",
+        "Reply with exactly one word on the first line: A, B or TIE. On the second line, "
+        "one short sentence saying which criterion decided it.",
     ]
     return "\n".join(lines)
 
@@ -93,6 +96,8 @@ class PairwiseResult:
     cost: float | None  # None when the judge model has no known price
     shown: str = ""  # what the judge was given as the assistant's rules
     judged_by: str = ""  # whose criteria it applied
+    # example id -> each order's winner (a tag or "tie") and the judge's reason (#27)
+    details: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def default_judge(run_a: RunResult, run_b: RunResult) -> str:
@@ -128,6 +133,15 @@ def _parse(reply: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _reason(reply: str) -> str:
+    """The judge's one-line reason: whatever follows the verdict (#27)."""
+    text = reply.strip()
+    first, _, rest = text.partition("\n")
+    if not rest.strip():  # verdict and reason on one line: "B - B follows rule 1"
+        rest = re.sub(r"^\s*\**\s*(TIE|A|B)\b\**[.:)\-\s]*", "", first, flags=re.IGNORECASE)
+    return " ".join(rest.split())[:400]
+
+
 def _ask(
     client: Any,
     model: str,
@@ -136,7 +150,7 @@ def _ask(
     second: str,
     system: str = JUDGE_SYSTEM,
     context: str | None = None,
-) -> tuple[str | None, Usage, float | None]:
+) -> tuple[str | None, Usage, float | None, str]:
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -151,10 +165,12 @@ def _ask(
         completion_tokens=int(getattr(usage_obj, "completion_tokens", 0) or 0),
     )
     reported = getattr(response, "reported_cost_usd", None)
+    reply = response.choices[0].message.content or ""
     return (
-        _parse(response.choices[0].message.content or ""),
+        _parse(reply),
         usage,
         float(reported) if isinstance(reported, (int, float)) else None,
+        _reason(reply),
     )
 
 
@@ -184,16 +200,25 @@ def judge_pairwise(
     by_id_a = {e.id: e for e in run_a.examples if e.error is None}
     pairs = [(by_id_a[e.id], e) for e in run_b.examples if e.error is None and e.id in by_id_a]
 
+    details: dict[str, dict[str, str]] = {}
+
     def one(
         pair: tuple[ExampleResult, ExampleResult],
     ) -> tuple[str, float, bool, int, list[tuple[Usage, float | None]]]:
         a, b = pair
         # Order 1: A first. Order 2: B first. Map both to "which run won".
-        v1, u1, c1 = _ask(client, judge, a, a.output, b.output, system, rules)
-        v2, u2, c2 = _ask(client, judge, a, b.output, a.output, system, rules)
+        v1, u1, c1, r1 = _ask(client, judge, a, a.output, b.output, system, rules)
+        v2, u2, c2, r2 = _ask(client, judge, a, b.output, a.output, system, rules)
         won1 = {"A": "a", "B": "b", "TIE": "tie"}.get(v1 or "", "tie")
         won2 = {"A": "b", "B": "a", "TIE": "tie"}.get(v2 or "", "tie")
         unreadable = int(v1 is None) + int(v2 is None)
+        name = {"a": run_a.tag, "b": run_b.tag, "tie": "tie"}
+        details[a.id] = {
+            "first_order": name[won1],  # baseline's answer shown first
+            "second_order": name[won2],  # candidate's answer shown first
+            "reason_first_order": r1,
+            "reason_second_order": r2,
+        }
         if won1 == won2:
             score = {"b": 1.0, "a": 0.0, "tie": 0.5}[won1]
             return a.id, score, False, unreadable, [(u1, c1), (u2, c2)]
@@ -231,6 +256,7 @@ def judge_pairwise(
         model=judge,
         shown=shown,
         judged_by=judged_by,
+        details=details,
         scores={ex_id: score for ex_id, score, *_ in results},
         judged=len(results),
         order_disagreements=sum(1 for _, _, disagreed, _, _ in results if disagreed),
@@ -277,3 +303,31 @@ def pairwise_notes(result: PairwiseResult, run_a: RunResult, run_b: RunResult) -
             f"favour its own answers; pass --judge-model with a different model."
         )
     return tuple(notes)
+
+
+JUDGEMENTS_DIR = Path(".prompteval") / "judgements"
+
+
+def save_judgement(
+    result: PairwiseResult, run_a: RunResult, run_b: RunResult, runs_dir: Path | None = None
+) -> Path:
+    """Keep a pairwise judgement next to the runs, so `prompteval ui` can show each
+    verdict and its reason (#27). One file per pair, replaced by a newer judgement."""
+    folder = (runs_dir.parent / "judgements") if runs_dir else JUDGEMENTS_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in f"{run_a.tag}__vs__{run_b.tag}")
+    path = folder / f"{safe}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "baseline": run_a.tag,
+                "candidate": run_b.tag,
+                "judged_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                **asdict(result),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path

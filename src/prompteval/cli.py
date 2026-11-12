@@ -42,6 +42,7 @@ from prompteval.compare.pairwise import (
     baseline_with_pairwise,
     judge_pairwise,
     pairwise_notes,
+    save_judgement,
     with_pairwise,
 )
 from prompteval.compare.sweep import (
@@ -483,6 +484,34 @@ def criteria_list() -> None:
             click.echo(f"{p}  (empty)")
             continue
         click.echo(f"{p}{'  (DRAFT)' if draft else ''}")
+
+
+@main.command("ui")
+@click.option("--port", default=8765, show_default=True, type=click.IntRange(0, 65535))
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=None)
+@click.option("--no-open", is_flag=True, help="Don't open a browser tab.")
+def ui_cmd(port: int, runs_dir: Path | None, no_open: bool) -> None:
+    """Open a local page to read runs side by side, see why the judge decided, and
+    edit criteria. Local only (127.0.0.1), never calls a model. Ctrl+C stops it."""
+    import webbrowser
+
+    from prompteval.ui.server import serve
+
+    try:
+        server, url = serve(Path.cwd(), runs_dir, port)
+    except OSError as err:
+        raise click.ClickException(
+            f"could not listen on port {port} ({err.strerror}); try --port 0 for a free one"
+        ) from err
+    click.echo(f"prompteval ui: {url}  (local only; Ctrl+C to stop)")
+    if not no_open:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        click.echo("stopped")
+    finally:
+        server.server_close()
 
 
 @main.group()
@@ -1055,6 +1084,7 @@ def sweep(
                 context=sweep_judge_context.read_text() if sweep_judge_context else None,
                 **_judge_criteria(sweep_criteria, base_run),
             )
+            save_judgement(judged, base_run, runs[m])
             runs[m] = with_pairwise(runs[m], judged)
         runs[base] = baseline_with_pairwise(base_run)
 
@@ -1416,6 +1446,7 @@ def compare(
         except ValueError as err:
             raise click.ClickException(str(err)) from err
         notes = pairwise_notes(result, run_a, run_b)
+        save_judgement(result, run_a, run_b, runs_dir)
         run_a, run_b = baseline_with_pairwise(run_a), with_pairwise(run_b, result)
 
     try:

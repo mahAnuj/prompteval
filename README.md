@@ -317,6 +317,30 @@ would settle it. Examples that fail (timeouts, errors) count against the run
 that failed them, and the decision is adjusted for the number of scorers so
 adding scorers doesn't add false alarms.
 
+### See it: `prompteval ui`
+
+```bash
+prompteval ui      # opens http://127.0.0.1:8765
+```
+
+A local page over what the commands above already saved:
+
+- **Compare**: pick a baseline and a candidate and get the verdict and metric
+  table, then every example with both answers side by side, each scorer's
+  score (better or worse than the other run), and the judge's verdict with its
+  one-line reason for both orders. Filter to the examples where the candidate
+  lost, where the judge flipped, or where scores differ, and search inputs and
+  answers. Both prompts are one click away.
+- **Runs**: every run with its model, prompt file, criteria, scores and cost,
+  and each run's answers.
+- **Criteria**: read and edit your criteria files, and remove the DRAFT line
+  once you've reviewed one.
+
+It runs on your machine only (127.0.0.1), needs no account and never calls a
+model: re-running or re-judging costs money, so it shows you the command
+instead. Its only write is saving a criteria file, inside `criteria/`.
+`compare --pairwise` keeps each judgement in `.prompteval/judgements/` for it.
+
 ### Any model, any OpenAI-compatible provider
 
 **Prices come from a catalog of ~3,900 models**, merged from two maintained
@@ -487,14 +511,15 @@ week-by-week status table, decisions log, explicit non-goals, and post-v1 roadma
 That file is updated the same commit any code ships; this README only summarises.
 
 **As of 12 Nov 2026 (v0.3.0).** `init`, `bootstrap`, `run`, `compare`,
-`sweep`, `noise`, `criteria`, `dataset`, `models` and `scorer` CLIs; AI-drafted
+`sweep`, `noise`, `criteria`, `dataset`, `ui`, `models` and `scorer` CLIs; a local
+UI; AI-drafted
 evals; side-by-side judging against your own criteria; Claude Code as a
 no-key provider; a price catalog of ~3,900 models; any
 OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**344/344 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**361/361 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

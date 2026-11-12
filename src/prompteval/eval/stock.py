@@ -93,14 +93,17 @@ def not_empty(output: str) -> float:
 
 @scorer
 def length_between(output: str, expected: dict[str, Any]) -> float:
-    """1.0 iff `len(output)` is in `[expected["min_len"], expected["max_len"]]`.
+    """1.0 iff the output is within every length bound given.
 
-    expected: {"min_len": 50, "max_len": 500}
+    expected: {"min_len": 50, "max_len": 500}     # characters
+              {"min_words": 20, "max_words": 150}  # words, for "under 150 words"
     Missing keys default to 0 / infinity respectively — opt-in bounds.
     """
-    min_len = expected.get("min_len", 0)
-    max_len = expected.get("max_len", float("inf"))
-    return 1.0 if min_len <= len(output) <= max_len else 0.0
+    chars = len(output)
+    words = len(output.split())
+    ok_chars = expected.get("min_len", 0) <= chars <= expected.get("max_len", float("inf"))
+    ok_words = expected.get("min_words", 0) <= words <= expected.get("max_words", float("inf"))
+    return 1.0 if ok_chars and ok_words else 0.0
 
 
 @scorer
@@ -176,7 +179,7 @@ def llm_judge_tone(output: str, expected: dict[str, Any]) -> float:
 
 
 @scorer
-def llm_judge_factuality(output: str, expected: dict[str, Any]) -> float:
+def llm_judge_factuality(output: str, expected: dict[str, Any], input: str = "") -> float:
     """LLM rates how factually consistent `output` is with `expected["reference"]`. 0-1.
 
     expected: {"reference": "the source-of-truth text the output should match"}
@@ -194,4 +197,4 @@ def llm_judge_factuality(output: str, expected: dict[str, Any]) -> float:
         "consistent CANDIDATE is with REFERENCE. 1 = fully consistent, 0 = contradicts. "
         f"Return only the number, nothing else.\n\nREFERENCE: {reference}\n"
     )
-    return llm_judge(rubric=rubric, text=output)
+    return llm_judge(rubric=rubric, text=output, input=input or None)

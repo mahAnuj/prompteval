@@ -8,7 +8,7 @@ The project uses [uv](https://docs.astral.sh/uv/). Every command runs through it
 
 ```bash
 uv sync --all-extras --dev   # install deps (creates .venv)
-uv run pytest                # 344 tests, no network or API key needed
+uv run pytest                # 361 tests, no network or API key needed
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting gate (drop --check to fix)
 uv run mypy src tests        # strict mode, must stay clean
@@ -31,9 +31,9 @@ than adding ignores.
 
 A CLI that runs an eval suite against a prompt, scores the output, and reports
 quality *and* token cost side by side — so a prompt change can be judged on
-both at once. Entry point is `src/prompteval/cli.py` (Click), exposing eleven
+both at once. Entry point is `src/prompteval/cli.py` (Click), exposing twelve
 commands: `init`, `bootstrap`, `criteria`, `dataset`, `demo`, `models`, `run`, `compare`,
-`sweep`, `noise`, `scorer`.
+`sweep`, `noise`, `scorer`, `ui`.
 
 - **`cli.py`** — argument parsing and output formatting only. Business logic
   lives in the packages below; keep it that way.
@@ -74,6 +74,12 @@ commands: `init`, `bootstrap`, `criteria`, `dataset`, `demo`, `models`, `run`, `
   run's saved criteria, prompt-file name, eval name, built-in checklist) and
   is the one place it lives; `criteria which` and compare both call it. A
   named file that is missing is an error, never a fallback.
+- **`ui/server.py` + `ui/index.html`** — `prompteval ui`: stdlib HTTP server on
+  127.0.0.1 and one self-contained page (no CDN, no build). Reads runs,
+  `.prompteval/judgements/` (written by `compare --pairwise`) and `criteria/`;
+  its only write is PUT of a criteria file. Every request must carry a
+  127.0.0.1/localhost Host header (DNS rebinding), and the write also needs
+  the per-launch token embedded in the served page. Never calls a model.
 - **`compare/pairwise.py`** — `--pairwise`: a judge model compares two runs'
   answers (both orders; disagreement = tie) and becomes a scorer.
 - **`compare/sweep.py`** — `sweep`: one prompt on several models, each compared
@@ -92,7 +98,7 @@ commands: `init`, `bootstrap`, `criteria`, `dataset`, `demo`, `models`, `run`, `
   both ruff and mypy on purpose: the templates reference public API that does
   not exist yet, so linting them produces false positives. Do not "fix" the
   templates to satisfy the linters, and do not remove the excludes.
-- **Tests must not need network or an API key.** All 344 pass offline; keep new
+- **Tests must not need network or an API key.** All 361 pass offline; keep new
   tests that way by stubbing the model client rather than calling out.
 - **Cost and quality are reported together.** A change that reports one without
   the other defeats the point of the tool.

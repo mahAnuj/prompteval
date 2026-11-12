@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prompteval</title>
+<style>
+:root {
+  --bg: #f7f6f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #5d5c57; --faint: #8a8984;
+  --line: #e2e0d8; --accent: #1f4e79; --accent-bg: #e8eef5;
+  --good: #1d6b3a; --good-bg: #e5f2e9; --bad: #9b2226; --bad-bg: #f8e5e5;
+  --warn: #7a5300; --warn-bg: #fbf0d9; --code: #f1efe8;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161614; --panel: #1f1f1c; --ink: #ecebe6; --muted: #b3b1a9; --faint: #85837c;
+    --line: #34332f; --accent: #8fb8e3; --accent-bg: #1f2b38;
+    --good: #7fcf9b; --good-bg: #1b2e22; --bad: #f09a9d; --bad-bg: #351d1e;
+    --warn: #e8c374; --warn-bg: #33291a; --code: #262622;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; font-family: var(--mono); }
+header .root { color: var(--faint); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+nav { display: flex; gap: 4px; margin-left: auto; }
+nav button { border: 1px solid transparent; background: none; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+nav button[aria-current="page"] { background: var(--accent-bg); color: var(--accent); border-color: var(--line); }
+main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+label { color: var(--muted); font-size: 13px; }
+select, input[type=search], textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+select { max-width: 100%; }
+button.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.btn.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+button.btn:focus-visible, nav button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.verdict { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+.verdict.ship { color: var(--good); } .verdict.dont { color: var(--bad); } .verdict.unclear { color: var(--warn); }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.small { font-size: 13px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 13px; }
+td.num { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+.chip { display: inline-block; font: 12px var(--mono); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); margin: 0 4px 4px 0; white-space: nowrap; }
+.chip.good { color: var(--good); background: var(--good-bg); border-color: transparent; }
+.chip.bad { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
+.chip.warn { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+.notes li { margin-bottom: 4px; }
+.filters button { font: 13px var(--sans); border: 1px solid var(--line); background: var(--panel); color: var(--muted); padding: 4px 10px; border-radius: 14px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.example { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
+.example > .head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.example .id { font: 13px var(--mono); color: var(--faint); }
+.example .input { padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; }
+.pair > div { padding: 10px 14px; min-width: 0; }
+.pair > div + div { border-left: 1px solid var(--line); }
+.pair h4 { margin: 0 0 6px; font: 600 12px var(--mono); color: var(--muted); }
+.pair h4.win { color: var(--good); }
+.answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+.answer.error { color: var(--bad); font-family: var(--mono); font-size: 13px; }
+.judge { padding: 8px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.judge b { color: var(--ink); }
+pre, .prompt { background: var(--code); border-radius: 6px; padding: 10px; font: 13px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+code { font-family: var(--mono); font-size: 13px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+details summary { cursor: pointer; color: var(--muted); }
+textarea.editor { width: 100%; min-height: 360px; font: 14px/1.5 var(--mono); }
+.grid2 { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
+.list button { display: block; width: 100%; text-align: left; font: 14px var(--mono); background: none; border: 1px solid transparent; color: var(--ink); padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.list button[aria-current="true"] { background: var(--accent-bg); border-color: var(--line); }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+.status { font-size: 13px; margin-left: 8px; }
+@media (max-width: 760px) {
+  .pair, .grid2 { grid-template-columns: 1fr; }
+  .pair > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  main { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>prompteval</h1>
+  <span class="root" title="__ROOT__">__ROOT__</span>
+  <nav>
+    <button data-view="compare" aria-current="page">Compare</button>
+    <button data-view="runs">Runs</button>
+    <button data-view="criteria">Criteria</button>
+  </nav>
+</header>
+<main id="main"><div class="empty">Loading…</div></main>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const state = { view: "compare", data: null, a: null, b: null, filter: "all", search: "", run: null, crit: null };
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
+const money = (v) => (v === null || v === undefined) ? "unpriced" : "$" + Number(v).toFixed(4);
+const signed = (v, d = 3) => (v === null || v === undefined) ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+function setView(v) {
+  state.view = v;
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-current", b.dataset.view === v ? "page" : "false"));
+  render();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+
+async function load() {
+  state.data = await api("/api/state");
+  const runs = state.data.runs;
+  if (runs.length >= 2 && !state.a) { state.b = runs[0].tag; state.a = runs[1].tag; }
+  else if (runs.length === 1 && !state.a) { state.a = runs[0].tag; state.run = runs[0].tag; }
+  render();
+}
+
+function render() {
+  const main = $("#main");
+  if (!state.data) return;
+  if (state.view === "compare") return renderCompare(main);
+  if (state.view === "runs") return renderRuns(main);
+  return renderCriteria(main);
+}
+
+// ---------- Compare ----------
+function runOptions(selected) {
+  return state.data.runs.map((r) => `<option value="${esc(r.tag)}" ${r.tag === selected ? "selected" : ""}>${esc(r.tag)} · ${esc(r.model)}</option>`).join("");
+}
+
+async function renderCompare(main) {
+  const runs = state.data.runs;
+  if (runs.length < 2) {
+    main.innerHTML = `<div class="panel empty">Compare needs two runs. Make them with<br><code>prompteval run --prompt prompts/v1.txt --tag v1</code> and <code>--tag v2</code>, then reload.</div>`;
+    return;
+  }
+  main.innerHTML = `<div class="panel row">
+      <label>Baseline <select id="selA">${runOptions(state.a)}</select></label>
+      <label>Candidate <select id="selB">${runOptions(state.b)}</select></label>
+      <button class="btn" id="swap" title="Swap baseline and candidate">Swap</button>
+    </div><div id="cmp"><div class="empty">Comparing…</div></div>`;
+  $("#selA").onchange = (e) => { state.a = e.target.value; renderCompare(main); };
+  $("#selB").onchange = (e) => { state.b = e.target.value; renderCompare(main); };
+  $("#swap").onclick = () => { [state.a, state.b] = [state.b, state.a]; renderCompare(main); };
+  if (state.a === state.b) { $("#cmp").innerHTML = `<div class="panel empty">Pick two different runs.</div>`; return; }
+  let res;
+  try { res = await api(`/api/compare?a=${encodeURIComponent(state.a)}&b=${encodeURIComponent(state.b)}`); }
+  catch (err) { $("#cmp").innerHTML = `<div class="panel empty">${esc(err.message)}</div>`; return; }
+  state.cmp = res;
+  drawCompare();
+}
+
+function verdictClass(rec) {
+  if (rec.startsWith("ship")) return "ship";
+  if (rec.startsWith("don't")) return "dont";
+  return "unclear";
+}
+
+function drawCompare() {
+  const { report: r, judgement: j, a, b } = state.cmp;
+  const rows = [...r.scorer_deltas, ...(r.error_delta ? [r.error_delta] : [])].map((d) => {
+    const cls = d.status === "regressed" ? "bad" : d.status === "unclear" ? "warn" : d.status === "ok" ? "good" : "";
+    return `<tr><td>${esc(d.name)}</td><td class="num">${num(d.value_a)}</td><td class="num">${num(d.value_b)}</td>
+      <td class="num">${signed(d.delta)}</td><td class="num">[${signed(d.ci_low)}, ${signed(d.ci_high)}]</td>
+      <td class="num">${d.p_value === null ? "–" : (d.p_value < 0.001 ? "&lt;0.001" : num(d.p_value))}</td>
+      <td>${d.status ? `<span class="chip ${cls}">${esc(d.status)}</span>` : ""}</td></tr>`;
+  }).join("");
+  const c = r.cost_delta, l = r.latency_delta;
+  const pct = (d) => d.delta_pct === null ? signed(d.delta, 4) : signed(d.delta_pct, 0) + "%";
+  const notes = [...(r.warnings || []), ...(r.notes || [])].map((n) => `<li>${esc(n)}</li>`).join("");
+  const judgeHint = j ? `<span class="chip good">judged ${esc(j.judged_at || "")} · ${esc(j.model)}</span>`
+    : `<span class="faint small">No side-by-side judgement for this pair yet: <code>prompteval compare ${esc(state.a)} ${esc(state.b)} --pairwise</code></span>`;
+  $("#cmp").innerHTML = `
+    <div class="panel">
+      <p class="verdict ${verdictClass(r.recommendation)}">${esc(r.recommendation)}</p>
+      <div class="muted small">Quality: ${esc(r.quality_verdict)} · Cost: ${esc(r.cost_verdict)} · ${r.n_paired} paired examples · margin ${r.margin}</div>
+      <div class="tablewrap" style="margin-top:12px"><table>
+        <thead><tr><th>Metric</th><th>${esc(r.tag_a)}</th><th>${esc(r.tag_b)}</th><th>Δ</th><th>CI</th><th>p</th><th></th></tr></thead>
+        <tbody>${rows}
+          <tr><td>total cost</td><td class="num">${money(c.value_a)}</td><td class="num">${money(c.value_b)}</td><td class="num">${pct(c)}</td><td class="num">[${signed(c.ci_low, 0)}%, ${signed(c.ci_high, 0)}%]</td><td class="num">${c.p_value === null ? "–" : (c.p_value < 0.001 ? "&lt;0.001" : num(c.p_value))}</td><td></td></tr>
+          <tr><td>avg latency</td><td class="num">${num(l.value_a)}s</td><td class="num">${num(l.value_b)}s</td><td class="num">${pct(l)}</td><td class="num">[${signed(l.ci_low, 0)}%, ${signed(l.ci_high, 0)}%]</td><td class="num">${l.p_value === null ? "–" : (l.p_value < 0.001 ? "&lt;0.001" : num(l.p_value))}</td><td></td></tr>
+        </tbody></table></div>
+      ${notes ? `<ul class="notes small muted" style="margin:12px 0 0;padding-left:18px">${notes}</ul>` : ""}
+      <div style="margin-top:10px">${judgeHint}</div>
+    </div>
+    <details class="panel"><summary>Prompts</summary>
+      <div class="pair" style="margin-top:10px">
+        <div><h4>${esc(a.tag)} · ${esc(a.prompt_path)}</h4><div class="prompt">${esc(a.prompt_text)}</div></div>
+        <div><h4>${esc(b.tag)} · ${esc(b.prompt_path)}</h4><div class="prompt">${esc(b.prompt_text)}</div></div>
+      </div>
+    </details>
+    <div class="panel row filters" id="filters">
+      ${[["all", "All"], ["b", `${esc(b.tag)} preferred`], ["a", `${esc(a.tag)} preferred`], ["tie", "Ties and flips"], ["changed", "Scores differ"], ["errors", "Errors"]]
+        .map(([k, t]) => `<button data-f="${k}" aria-pressed="${state.filter === k}">${t}</button>`).join("")}
+      <input type="search" id="q" placeholder="Search inputs and answers" value="${esc(state.search)}" style="margin-left:auto;min-width:220px">
+    </div>
+    <div id="examples"></div>`;
+  document.querySelectorAll("#filters button").forEach((btn) => btn.onclick = () => { state.filter = btn.dataset.f; drawCompare(); });
+  $("#q").oninput = (e) => { state.search = e.target.value; drawExamples(); };
+  drawExamples();
+}
+
+function scoresOf(ex) { const m = {}; (ex.scores || []).forEach((s) => m[s.name] = s.score); return m; }
+
+function drawExamples() {
+  const { judgement: j, a, b } = state.cmp;
+  const byIdB = Object.fromEntries(b.examples.map((e) => [e.id, e]));
+  const details = (j && j.details) || {};
+  const pscores = (j && j.scores) || {};
+  const q = state.search.trim().toLowerCase();
+  const items = a.examples.filter((ea) => byIdB[ea.id]).map((ea) => ({ ea, eb: byIdB[ea.id] })).filter(({ ea, eb }) => {
+    const p = pscores[ea.id];
+    const sa = scoresOf(ea), sb = scoresOf(eb);
+    const changed = Object.keys(sa).some((k) => k !== "pairwise_preference" && sb[k] !== undefined && Math.abs(sa[k] - sb[k]) > 1e-9);
+    if (state.filter === "b" && p !== 1) return false;
+    if (state.filter === "a" && p !== 0) return false;
+    if (state.filter === "tie" && p !== 0.5) return false;
+    if (state.filter === "changed" && !changed) return false;
+    if (state.filter === "errors" && !(ea.error || eb.error)) return false;
+    if (q && ![ea.input, ea.output, eb.output].some((t) => String(t || "").toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if (!items.length) { $("#examples").innerHTML = `<div class="panel empty">No examples match.</div>`; return; }
+  $("#examples").innerHTML = items.map(({ ea, eb }) => {
+    const sa = scoresOf(ea), sb = scoresOf(eb);
+    const chips = (mine, other) => Object.keys(mine).filter((k) => k !== "pairwise_preference").map((k) => {
+      const cls = other[k] === undefined ? "" : mine[k] > other[k] ? "good" : mine[k] < other[k] ? "bad" : "";
+      return `<span class="chip ${cls}">${esc(k)} ${num(mine[k])}</span>`;
+    }).join("");
+    const p = pscores[ea.id], d = details[ea.id];
+    const winA = p === 0, winB = p === 1;
+    const tags = [ea.source === "synthetic" ? `<span class="chip">synthetic</span>` : "",
+      ea.expected && Object.keys(ea.expected).length ? `<span class="chip" title="${esc(JSON.stringify(ea.expected))}">expected: ${esc(Object.keys(ea.expected).join(", "))}</span>` : ""].join("");
+    let judge = "";
+    if (d) {
+      const verdict = p === 1 ? `<b>${esc(b.tag)} better</b>` : p === 0 ? `<b>${esc(a.tag)} better</b>` : (d.first_order !== d.second_order ? "<b>tie</b> (the verdict flipped when the answers were swapped)" : "<b>tie</b>");
+      const line = (label, who, why) => `<div>${label}: ${esc(who)}${why ? ` — ${esc(why)}` : ""}</div>`;
+      judge = `<div class="judge">Judge: ${verdict}${line(`${esc(a.tag)} shown first`, d.first_order, d.reason_first_order)}${line(`${esc(b.tag)} shown first`, d.second_order, d.reason_second_order)}</div>`;
+    }
+    const ans = (e) => e.error ? `<div class="answer error">${esc(e.error)}</div>` : `<div class="answer">${esc(e.output)}</div>`;
+    return `<article class="example">
+      <div class="head"><span class="id">${esc(ea.id)}</span>${tags}</div>
+      <div class="input">${esc(ea.input)}</div>
+      <div class="pair">
+        <div><h4 class="${winA ? "win" : ""}">${esc(a.tag)}${winA ? " ✓" : ""}</h4>${chips(sa, sb)}${ans(ea)}</div>
+        <div><h4 class="${winB ? "win" : ""}">${esc(b.tag)}${winB ? " ✓" : ""}</h4>${chips(sb, sa)}${ans(eb)}</div>
+      </div>${judge}</article>`;
+  }).join("");
+}
+
+// ---------- Runs ----------
+async function renderRuns(main) {
+  const runs = state.data.runs;
+  if (!runs.length) { main.innerHTML = `<div class="panel empty">No runs yet in .prompteval/runs. Start with <code>prompteval run --prompt … --tag v1</code>.</div>`; return; }
+  const names = [...new Set(runs.flatMap((r) => Object.keys(r.scores)))];
+  main.innerHTML = `<div class="panel tablewrap"><table><thead><tr><th>Run</th><th>Model</th><th>Prompt</th><th>Criteria</th><th>Examples</th>${names.map((n) => `<th>${esc(n)}</th>`).join("")}<th>Cost</th><th>Judge cost</th><th>Finished</th></tr></thead>
+    <tbody>${runs.map((r) => `<tr><td><button class="btn" data-run="${esc(r.tag)}">${esc(r.tag)}</button></td><td>${esc(r.model)}</td><td class="small">${esc(r.prompt_path)}</td><td class="small">${esc(r.criteria || "")}</td>
+      <td class="num">${r.examples}${r.errors ? ` <span class="chip bad">${r.errors} errors</span>` : ""}</td>${names.map((n) => `<td class="num">${num(r.scores[n])}</td>`).join("")}
+      <td class="num">${money(r.total_cost)}</td><td class="num">${money(r.judge_cost)}</td><td class="small faint">${esc((r.finished_at || "").replace("T", " ").slice(0, 16))}</td></tr>`).join("")}</tbody></table></div>
+    <div id="runview"></div>`;
+  document.querySelectorAll("[data-run]").forEach((btn) => btn.onclick = () => { state.run = btn.dataset.run; drawRun(); });
+  if (state.run) drawRun();
+}
+
+async function drawRun() {
+  const r = await api(`/api/run/${encodeURIComponent(state.run)}`);
+  $("#runview").innerHTML = `<div class="panel"><h3 style="margin-top:0">${esc(r.tag)}</h3><details><summary>Prompt (${esc(r.prompt_path)})</summary><div class="prompt" style="margin-top:8px">${esc(r.prompt_text)}</div></details></div>` +
+    r.examples.map((e) => `<article class="example"><div class="head"><span class="id">${esc(e.id)}</span>${(e.scores || []).map((s) => `<span class="chip">${esc(s.name)} ${num(s.score)}</span>`).join("")}</div>
+      <div class="input">${esc(e.input)}</div><div style="padding:10px 14px">${e.error ? `<div class="answer error">${esc(e.error)}</div>` : `<div class="answer">${esc(e.output)}</div>`}</div></article>`).join("");
+}
+
+// ---------- Criteria ----------
+async function renderCriteria(main) {
+  const list = state.data.criteria;
+  main.innerHTML = `<div class="grid2">
+    <div class="panel list"><div class="small muted" style="margin-bottom:8px">criteria/</div>
+      ${list.map((c) => `<button data-c="${esc(c.name)}" aria-current="${state.crit === c.name}">${esc(c.name)}${c.draft ? ' <span class="chip warn">draft</span>' : ""}</button>`).join("") || '<div class="faint small">None yet.</div>'}
+      <div style="margin-top:12px" class="row"><input type="search" id="newname" placeholder="new-file-name" style="flex:1;min-width:0"><button class="btn" id="new">New</button></div>
+    </div>
+    <div class="panel" id="editor"><div class="empty">Pick a criteria file, or start a new one.<br><span class="small">Each file holds your rules for judging one prompt, most important first.</span></div></div>
+  </div>`;
+  document.querySelectorAll("[data-c]").forEach((btn) => btn.onclick = () => openCrit(btn.dataset.c));
+  $("#new").onclick = () => {
+    const n = $("#newname").value.trim().replace(/[^A-Za-z0-9._-]+/g, "-");
+    if (!n) return;
+    state.crit = n.endsWith(".md") || n.endsWith(".txt") ? n : n + ".md";
+    drawEditor(state.crit, `# Criteria: ${n}\n\n1. <the rule that matters most>\n2. <the next one>\n`, true);
+  };
+  if (state.crit) openCrit(state.crit);
+}
+
+async function openCrit(name) {
+  state.crit = name;
+  document.querySelectorAll("[data-c]").forEach((b) => b.setAttribute("aria-current", b.dataset.c === name));
+  try { const r = await api(`/api/criteria/${encodeURIComponent(name)}`); drawEditor(r.name, r.text, false); }
+  catch (err) { $("#editor").innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+}
+
+function drawEditor(name, text, isNew) {
+  const stem = name.replace(/\.(md|txt)$/, "");
+  $("#editor").innerHTML = `<div class="row" style="margin-bottom:8px"><strong style="font-family:var(--mono)">criteria/${esc(name)}</strong>
+      <button class="btn primary" id="save" style="margin-left:auto">Save</button><button class="btn" id="undraft">Remove DRAFT line</button><span class="status" id="st"></span></div>
+    <textarea class="editor" id="txt" spellcheck="true">${esc(text)}</textarea>
+    <p class="small muted">Use it: <code>prompteval compare v1 v2 --pairwise --criteria ${esc(stem)}</code>, or name your prompt file <code>${esc(stem)}.txt</code> and it is picked automatically. The judge applies the rules in order; earlier ones outweigh later ones.</p>`;
+  $("#undraft").onclick = () => { const t = $("#txt"); t.value = t.value.split("\n").filter((l) => !l.startsWith("# PROMPTEVAL-DRAFT")).join("\n"); $("#st").textContent = "DRAFT line removed — save to keep it."; };
+  $("#save").onclick = async () => {
+    $("#st").textContent = "Saving…";
+    try {
+      await api(`/api/criteria/${encodeURIComponent(name)}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Prompteval-Token": TOKEN }, body: JSON.stringify({ text: $("#txt").value }) });
+      $("#st").textContent = "Saved.";
+      state.data = await api("/api/state");
+      if (isNew) renderCriteria($("#main"));
+    } catch (err) { $("#st").textContent = "Not saved: " + err.message; }
+  };
+}
+
+load().catch((err) => { $("#main").innerHTML = `<div class="panel empty">${esc(err.message)}</div>`; });
+</script>
+</body>
+</html>
