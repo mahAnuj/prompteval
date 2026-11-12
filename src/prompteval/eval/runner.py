@@ -182,6 +182,10 @@ class Eval:
     # Extra request settings sent with every call (#10), e.g.
     # {"temperature": 0, "max_tokens": 300, "response_format": {"type": "json_object"}}.
     params: dict[str, Any] = field(default_factory=dict)
+    # Optional user-message template (#10), e.g. "Ticket from {customer}: {input}".
+    # With it, the prompt file is the system message (its own {placeholders}
+    # filled too) and this, filled, is the user message.
+    user_template: str | None = None
 
     def __post_init__(self) -> None:
         if not self.scorers:
@@ -230,15 +234,25 @@ def fill_prompt(prompt_text: str, values: dict[str, Any]) -> str:
     return _ESCAPED_VAR.sub(lambda m: "{" + m.group(1) + "}", filled)
 
 
-def build_messages(prompt_text: str, example: Example) -> list[dict[str, str]]:
+def build_messages(
+    prompt_text: str, example: Example, user_template: str | None = None
+) -> list[dict[str, str]]:
     """The messages for one example.
 
-    A plain prompt is the system message and the example's input the user
-    message. A prompt with `{placeholders}` is a template: it is filled from
-    `input` and the example's `vars`, and sent as the user message.
+    - With a `user_template`: the prompt (placeholders filled) is the system
+      message and the filled template the user message.
+    - A prompt with `{placeholders}` and no user template is filled from
+      `input` and the example's `vars`, and sent as the user message.
+    - A plain prompt is the system message and the example's input the user
+      message.
     """
+    values: dict[str, Any] = {"input": example.input, **example.vars}
+    if user_template is not None:
+        return [
+            {"role": "system", "content": fill_prompt(prompt_text, values)},
+            {"role": "user", "content": fill_prompt(user_template, values)},
+        ]
     if prompt_variables(prompt_text):
-        values: dict[str, Any] = {"input": example.input, **example.vars}
         return [{"role": "user", "content": fill_prompt(prompt_text, values)}]
     return [
         {"role": "system", "content": prompt_text},
@@ -252,6 +266,7 @@ def default_runner(
     model: str,
     client: Any,
     params: dict[str, Any] | None = None,
+    user_template: str | None = None,
 ) -> RunnerResult:
     """One chat completion per example (see `build_messages` for the shape).
 
@@ -261,7 +276,7 @@ def default_runner(
     """
     response = client.chat.completions.create(
         model=model,
-        messages=build_messages(prompt_text, example),
+        messages=build_messages(prompt_text, example, user_template),
         **(params or {}),
     )
 
@@ -330,7 +345,9 @@ def run_eval(
     pricing = resolve_pricing(effective_model, prices, effective_base_url)
     examples = _load_dataset(Path(eval_def.dataset))
     effective_params = {**eval_def.params, **(params or {})}
-    runner: Runner = eval_def.runner or functools.partial(default_runner, params=effective_params)
+    runner: Runner = eval_def.runner or functools.partial(
+        default_runner, params=effective_params, user_template=eval_def.user_template
+    )
     eff_client = (
         client
         if client is not None

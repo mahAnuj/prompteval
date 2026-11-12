@@ -136,3 +136,34 @@ def test_compare_warns_when_settings_differ() -> None:
     a = _run("v1", {"q": [1.0] * 3}, [1] * 3)
     b = replace(_run("v2", {"q": [1.0] * 3}, [1] * 3), params={"max_tokens": 100})
     assert "request settings differ" in render_text(compute_comparison(a, b))
+
+
+def test_system_prompt_with_a_user_template() -> None:
+    msgs = build_messages(
+        "You answer for {company}.",
+        Example(id="a", input="Where is my order?", vars={"company": "Acme", "customer": "Asha"}),
+        user_template="Customer {customer} asks: {input}",
+    )
+    assert msgs == [
+        {"role": "system", "content": "You answer for Acme."},
+        {"role": "user", "content": "Customer Asha asks: Where is my order?"},
+    ]
+
+
+def test_user_template_is_used_by_run_eval(tmp_path: Path) -> None:
+    ds = tmp_path / "d.jsonl"
+    ds.write_text(json.dumps({"id": "a", "input": "hi"}) + "\n")
+    prompt = tmp_path / "p.txt"
+    prompt.write_text("Be brief.")
+    client = _mock_openai_client()
+    run_eval(
+        Eval(name="e", dataset=ds, scorers=[ok], user_template="Q: {input}"),
+        prompt,
+        "t",
+        client=client,
+    )
+    sent = client.chat.completions.create.call_args.kwargs["messages"]
+    assert sent == [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "Q: hi"},
+    ]
