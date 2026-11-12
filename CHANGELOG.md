@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-12
 
 - You decide which criteria judge which prompt (#25). `run --criteria NAME`
   saves the choice on the run (checked before any model call), a file named
