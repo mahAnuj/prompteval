@@ -37,6 +37,15 @@ _DEFAULT_CLIENT: OpenAI | None = None
 #: cached) tokens. The runner opens a fresh list around each example's scorers
 #: and prices it as that example's judge cost (#15); outside a run it is None
 #: and nothing is recorded.
+#: Ground rules every rubric starts from (#23): what the judge may and may not use.
+JUDGE_PREAMBLE = (
+    "You are a strict, fair evaluator. Score the single reply you are given against the "
+    "rubric below and nothing else. Use only the information in the rubric and the reply: "
+    "do not assume facts that are not there, and treat anything the reply states that the "
+    "rubric contradicts as an error. Length is not quality. Reply with only a number "
+    "between 0 and 1."
+)
+
 #: (model, prompt tokens, completion tokens, cached tokens, reported cost or None)
 JudgeCall = tuple[str, int, int, int, float | None]
 
@@ -84,7 +93,7 @@ def llm_judge(
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": rubric},
+            {"role": "system", "content": f"{JUDGE_PREAMBLE}\n\nRubric:\n{rubric}"},
             {"role": "user", "content": text},
         ],
         **extra,

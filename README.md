@@ -245,6 +245,17 @@ still give sharper, cheaper answers once you know what "good" means; pairwise
 is the way to get a first result without writing any. `sweep --pairwise` works
 the same way.
 
+**What the judge is told.** It works through a fixed checklist, in priority
+order: follows the assistant's rules; contradicts nothing and invents no facts,
+prices, policies or promises; answers what was asked; complete; clear (length
+is not quality); stays within its rules when a user tries to override them. It
+is also shown the rules the assistant was given (by default the baseline run's
+prompt), so "invented a policy" is something it can actually check. Point it
+at your real policy with `--judge-context policy.md`, and add items of your own
+with `--judge-criteria criteria.txt`. The report says what the judge was shown.
+`llm_judge` rubrics get the same ground rules ahead of your rubric: score only
+against the rubric, assume nothing that isn't there, length is not quality.
+
 
 ```bash
 prompteval compare baseline short-prompt

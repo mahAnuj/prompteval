@@ -171,3 +171,86 @@ def test_reports_render_notes() -> None:
     assert "Note: Pairwise judge" in render_text(report)
     assert "> Pairwise judge" in render_markdown(report)
     json.dumps([report.recommendation])  # plain strings throughout
+
+
+# ---- #23: the judge gets a checklist and the assistant's rules -------------------------
+
+
+def _capturing_judge(reply: str = "TIE") -> tuple[Any, list[dict[str, Any]]]:
+    seen: list[dict[str, Any]] = []
+    client = MagicMock()
+
+    def create(**kwargs: Any) -> Any:
+        seen.append(kwargs)
+        done = MagicMock()
+        done.choices = [MagicMock(message=MagicMock(content=reply))]
+        done.usage = MagicMock(prompt_tokens=10, completion_tokens=1)
+        return done
+
+    client.chat.completions.create.side_effect = create
+    return client, seen
+
+
+def test_judge_sees_the_checklist_and_the_baseline_rules() -> None:
+    from dataclasses import replace
+
+    a = replace(
+        _run("v1", ["x"]),
+        prompt_text="Returns are accepted within 30 days. Never promise faster delivery.",
+    )
+    b = _run("v2", ["y"])
+    client, seen = _capturing_judge()
+    result = judge_pairwise(a, b, client=client, model="gpt-4.1-mini")
+    system = seen[0]["messages"][0]["content"]
+    user = seen[0]["messages"][1]["content"]
+    assert "Checklist:" in system and "Follows the assistant's instructions" in system
+    assert "invents no facts, prices, policies" in system and "Length is not quality" in system
+    assert "The instructions the assistant was given" in user and "within 30 days" in user
+    assert "v1's prompt as the assistant's rules" in result.shown
+    assert "6-point checklist" in " ".join(pairwise_notes(result, a, b))
+
+
+def test_judge_context_and_extra_criteria_override_and_extend() -> None:
+    a, b = _run("v1", ["x"]), _run("v2", ["y"])
+    client, seen = _capturing_judge()
+    result = judge_pairwise(
+        a,
+        b,
+        client=client,
+        model="gpt-4.1-mini",
+        context="Policy: refunds within 14 days only.",
+        criteria="Prefer answers that offer a next step.",
+    )
+    system = seen[0]["messages"][0]["content"]
+    user = seen[0]["messages"][1]["content"]
+    assert "refunds within 14 days only" in user
+    assert "Additional criteria from the user" in system and "offer a next step" in system
+    assert result.shown == "your --judge-context and your extra criteria"
+
+
+def test_cli_judge_context_and_criteria_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    save_run(_run("v1", ["bad"] * 5))
+    save_run(_run("v2", ["GOOD"] * 5))
+    (tmp_path / "rules.txt").write_text("Refunds within 14 days.")
+    (tmp_path / "criteria.txt").write_text("Prefer a next step.")
+    client, seen = _capturing_judge()
+    with patch("prompteval.eval.runner.OpenAI", return_value=client):
+        result = CliRunner().invoke(
+            main,
+            [
+                "compare",
+                "v1",
+                "v2",
+                "--pairwise",
+                "--judge-context",
+                "rules.txt",
+                "--judge-criteria",
+                "criteria.txt",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert "Refunds within 14 days." in seen[0]["messages"][1]["content"]
+    assert "Prefer a next step." in seen[0]["messages"][0]["content"]

@@ -89,12 +89,19 @@ def test_uses_specified_model() -> None:
 
 
 def test_messages_carry_rubric_and_text() -> None:
-    """Rubric must be the system message, text must be the user message."""
+    """The system message is the standard evaluator ground rules followed by the
+    rubric (#23); the text being judged is the user message."""
+    from prompteval.eval.judge import JUDGE_PREAMBLE
+
     client = _mock_client("0.5")
     llm_judge("custom rubric", "candidate text", client=client)
     call_kwargs = client.chat.completions.create.call_args.kwargs
     messages = call_kwargs["messages"]
-    assert messages[0] == {"role": "system", "content": "custom rubric"}
+    assert messages[0] == {
+        "role": "system",
+        "content": f"{JUDGE_PREAMBLE}\n\nRubric:\ncustom rubric",
+    }
+    assert "Length is not quality" in JUDGE_PREAMBLE
     assert messages[1] == {"role": "user", "content": "candidate text"}
 
 

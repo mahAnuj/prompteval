@@ -775,6 +775,20 @@ def _user_prices(
 )
 @click.option("--judge-model", "sweep_judge_model", default=None, help="Judge for --pairwise.")
 @click.option(
+    "--judge-context",
+    "sweep_judge_context",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="File with the rules shown to the --pairwise judge (default: the prompt).",
+)
+@click.option(
+    "--judge-criteria",
+    "sweep_judge_criteria",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="File with extra criteria for the --pairwise judge's checklist.",
+)
+@click.option(
     "--judge-base-url", "sweep_judge_base_url", default=None, help="Endpoint for the judge."
 )
 @click.option(
@@ -810,6 +824,8 @@ def sweep(
     sweep_pairwise: bool,
     sweep_judge_model: str | None,
     sweep_judge_base_url: str | None,
+    sweep_judge_context: Path | None,
+    sweep_judge_criteria: Path | None,
     sweep_base_url: str | None,
     unpriced: bool,
     concurrency: int,
@@ -884,7 +900,14 @@ def sweep(
             if m == base:
                 continue
             click.echo(f"{m}: judging against {base}...")
-            judged = judge_pairwise(base_run, runs[m], client=judge_client, model=sweep_judge_model)
+            judged = judge_pairwise(
+                base_run,
+                runs[m],
+                client=judge_client,
+                model=sweep_judge_model,
+                context=sweep_judge_context.read_text() if sweep_judge_context else None,
+                criteria=sweep_judge_criteria.read_text() if sweep_judge_criteria else None,
+            )
             runs[m] = with_pairwise(runs[m], judged)
         runs[base] = baseline_with_pairwise(base_run)
 
@@ -1153,6 +1176,21 @@ def _count_examples(dataset_path: Path) -> int:
 @click.option(
     "--judge-model", default=None, help="Judge for --pairwise (default: a model neither run used)."
 )
+@click.option(
+    "--judge-context",
+    "judge_context_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="File with the rules the assistant must follow, shown to the --pairwise judge "
+    "(default: the baseline run's prompt).",
+)
+@click.option(
+    "--judge-criteria",
+    "judge_criteria_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="File with extra criteria added to the --pairwise judge's checklist.",
+)
 @click.option("--judge-base-url", default=None, help="OpenAI-compatible endpoint for the judge.")
 @click.option("--judge-api-key-env", default=None, help="Env var holding the judge endpoint's key.")
 @click.option(
@@ -1186,6 +1224,8 @@ def compare(
     judge_model: str | None,
     judge_base_url: str | None,
     judge_api_key_env: str | None,
+    judge_context_file: Path | None,
+    judge_criteria_file: Path | None,
 ) -> None:
     """Compare two persisted runs and print the paired delta report.
 
@@ -1217,6 +1257,8 @@ def compare(
                 run_a,
                 run_b,
                 client=_make_client(judge_base_url, judge_api_key_env),
+                context=judge_context_file.read_text() if judge_context_file else None,
+                criteria=judge_criteria_file.read_text() if judge_criteria_file else None,
                 model=(
                     judge_model
                     or (_claude_judge((run_a, run_b)) if judge_base_url == CLAUDE_CODE else None)

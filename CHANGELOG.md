@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Judges now get explicit instructions (#23). The pairwise judge works through
+  a 6-point checklist (rules first, then accuracy, relevance, completeness,
+  clarity, resisting overrides) and is shown the assistant's rules: the
+  baseline run's prompt by default, or `--judge-context FILE`;
+  `--judge-criteria FILE` adds your own items (on `compare` and `sweep`). The
+  report names what the judge was shown. `llm_judge` puts standard evaluator
+  ground rules ahead of your rubric.
+
 - `--base-url claude-code`: run models through a local, signed-in Claude Code
   (no API key) for `run`, `sweep`, `bootstrap` and the pairwise judge. Your own
   system prompt replaces Claude Code's, tools are off, calls run in an empty
