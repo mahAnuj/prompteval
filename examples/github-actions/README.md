@@ -8,9 +8,12 @@ Drop [`prompteval.yml`](./prompteval.yml) into your repo at
 
 - **Paired delta report** on every PR — same shape as `prompteval compare` locally.
 - **HTML artifact** uploaded to the PR's Checks tab — shareable without re-running.
-- **CI gate** — fails the build if cost regresses more than 10% or any scorer
-  drops more than 5 percentage points. Only *statistically significant* changes
-  count (p < 0.05), so a noisy 12% wobble on a 5-example eval won't trip it.
+- **CI gate** — fails the build if cost *could* have risen more than 10%, or
+  any scorer *could* have dropped more than 5 percentage points, judged on the
+  95% confidence interval. A 5-example eval with a noisy 12% wobble fails until
+  more examples rule the rise out: a gate should get stricter, not looser, when
+  the evidence is thin. `--gate-mode significant` counts only statistically
+  significant breaches instead (the v0.1 behaviour).
 
 ## Required secrets
 
@@ -26,8 +29,8 @@ The `--fail-on cost+10%,quality-5%` line is the policy knob:
 
 | Spec | Meaning |
 |---|---|
-| `cost+10%` | Fail if cost increased by more than 10% (significant). |
-| `quality-5%` | Fail if any scorer's mean dropped by more than 0.05 absolute (significant). |
+| `cost+10%` | Fail if the cost change's 95% CI reaches above +10%. |
+| `quality-5%` | Fail if any scorer's 95% CI reaches below -0.05, or the error rate's reaches above +0.05. |
 | `cost+10%,quality-5%` | Either triggers a fail. |
 
 Real production prompts should probably set tighter bounds (e.g. `quality-2%`).

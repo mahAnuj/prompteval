@@ -17,12 +17,13 @@ from prompteval.compare import compute_comparison, render_text
 from prompteval.compare.core import (
     MetricDelta,
     _bootstrap_mean_ci,
+    _bootstrap_mean_dist,
+    _bootstrap_p,
     _bootstrap_percent_change_ci,
     _common_scorer_names,
     _format_p,
     _make_verdicts,
     _pair_examples,
-    _paired_p_value,
 )
 from prompteval.eval.runner import ScoreOutcome
 
@@ -149,25 +150,31 @@ def test_bootstrap_percent_change_ci_brackets_true_pct() -> None:
     assert high == pytest.approx(-50.0, abs=0.01)
 
 
-def test_paired_p_value_significant_for_clear_difference() -> None:
+def test_bootstrap_p_significant_for_clear_difference() -> None:
     rng = np.random.default_rng(0)
     a = rng.normal(0.5, 0.05, 50)
     b = rng.normal(0.7, 0.05, 50)  # clear improvement
-    p = _paired_p_value(a, b)
-    assert p < 0.001
+    assert _bootstrap_p(_bootstrap_mean_dist(b - a)) < 0.001
 
 
-def test_paired_p_value_high_for_no_difference() -> None:
-    """Two identical samples: no signal, p should be high (or 1.0 if degenerate)."""
-    a = np.array([0.5, 0.5, 0.5, 0.5, 0.5])
-    b = np.array([0.5, 0.5, 0.5, 0.5, 0.5])
-    p = _paired_p_value(a, b)
-    assert p == 1.0  # degenerate-equal case returns 1.0 (documented)
+def test_bootstrap_p_is_one_for_no_difference() -> None:
+    diffs = np.zeros(5)
+    assert _bootstrap_p(_bootstrap_mean_dist(diffs)) == 1.0
 
 
-def test_paired_p_value_handles_short_samples() -> None:
-    assert _paired_p_value(np.array([0.5]), np.array([0.6])) == 1.0
-    assert _paired_p_value(np.array([]), np.array([])) == 1.0
+def test_bootstrap_p_agrees_with_the_95_ci() -> None:
+    """The p-value and the CI come from one distribution, so they cannot disagree (#1)."""
+    rng = np.random.default_rng(3)
+    for _ in range(30):
+        diffs = rng.normal(rng.uniform(-0.2, 0.2), 0.3, 20)
+        dist = _bootstrap_mean_dist(diffs)
+        lo, hi = np.percentile(dist, [2.5, 97.5])
+        excludes_zero = lo > 0 or hi < 0
+        assert excludes_zero == (_bootstrap_p(dist) < 0.05)
+
+
+def test_bootstrap_p_handles_empty() -> None:
+    assert _bootstrap_p(np.empty(0)) == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +373,7 @@ def test_verdicts_ship_path() -> None:
         scorer_deltas=[_delta("acc", delta=0.0, p=0.5)],
         cost_delta=_delta("cost", delta_pct=-37, p=0.0001),
     )
-    assert "no significant regression" in quality_v
+    assert quality_v.startswith("holds")
     assert "37% reduction" in cost_v
     assert "ship v2" in rec
 

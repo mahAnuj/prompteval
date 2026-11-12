@@ -244,8 +244,12 @@ def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None
 
     click.echo("")
     click.echo(f"=== {tag} ===")
+    n_ok = sum(1 for e in result.examples if e.error is None)
+    n_err = len(result.examples) - n_ok
     for name, mean in result.scorer_means.items():
-        click.echo(f"{name:<28} {mean:.2f} (n={len(result.examples)})")
+        click.echo(f"{name:<28} {mean:.2f} (n={n_ok})")
+    if n_err:
+        click.echo(f"errors                      {n_err} of {len(result.examples)} examples failed")
     avg_cost = result.total_cost / max(1, len(result.examples))
     click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
     click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
@@ -321,9 +325,27 @@ def _count_examples(dataset_path: Path) -> int:
     "fail_on",
     default=None,
     help=(
-        "CI gate spec, e.g. 'cost+10%,quality-5%'. Exits 1 if any significant "
-        "breach is detected. Only counts statistically significant changes."
+        "CI gate spec, e.g. 'cost+10%,quality-5%'. Exits 1 on a breach. By default a "
+        "clause fails when the 95% CI says the breach is plausible (see --gate-mode)."
     ),
+)
+@click.option(
+    "--gate-mode",
+    "gate_mode",
+    type=click.Choice(["bound", "significant"]),
+    default="bound",
+    show_default=True,
+    help=(
+        "bound: fail when the worst plausible change breaches the gate. "
+        "significant: fail only on a statistically significant breach (v0.1 behaviour)."
+    ),
+)
+@click.option(
+    "--margin",
+    type=click.FloatRange(0.0, 1.0, max_open=True),
+    default=0.05,
+    show_default=True,
+    help="Largest scorer drop (0-1 scale) still counted as 'quality holds'.",
 )
 def compare(
     tag_a: str,
@@ -331,6 +353,8 @@ def compare(
     runs_dir: Path | None,
     html_path: Path | None,
     fail_on: str | None,
+    gate_mode: str,
+    margin: float,
 ) -> None:
     """Compare two persisted runs and print the paired delta report.
 
@@ -339,7 +363,7 @@ def compare(
     and paired t-test p-values, plus a plain-English recommendation.
 
     Use --html PATH to also write a shareable single-file HTML report.
-    Use --fail-on to gate CI on significant regressions (exits 1 on breach).
+    Use --fail-on to gate CI on regressions (exits 1 on breach).
     """
     try:
         run_a = load_run(tag_a, runs_dir=runs_dir)
@@ -356,7 +380,7 @@ def compare(
             raise click.ClickException(str(err)) from err
 
     try:
-        report = compute_comparison(run_a, run_b)
+        report = compute_comparison(run_a, run_b, margin=margin)
     except ValueError as err:
         raise click.ClickException(str(err)) from err
 
@@ -368,7 +392,7 @@ def compare(
         click.echo(f"HTML report: {html_path}")
 
     if clauses is not None:
-        breaches = evaluate_gates(report, clauses)
+        breaches = evaluate_gates(report, clauses, mode=gate_mode)
         if breaches:
             click.echo("")
             click.echo("GATE FAILED:")

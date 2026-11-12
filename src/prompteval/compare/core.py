@@ -20,26 +20,42 @@ We use `scipy.stats.ttest_rel` for paired p-values and `scipy.stats.bootstrap`
 for mean-delta CIs. Custom bootstrap loop for percent-change CIs (those need
 to resample paired indices and re-sum, not just average a 1D sample).
 
-## v1 stats choices
+## Stats choices
 
-- **Bootstrap for CIs** (percentile method, 10K resamples, default seeded RNG
-  for reproducibility) — robust, doesn't assume normality, works on any sample
-  shape including 0/1 deterministic scorer outputs.
-- **Paired t-test for p-values** — simple, well-understood, "good enough" for
-  v1. For binary-output scorers Wilcoxon signed-rank would be more correct;
-  we can add it later if real users complain. The decision-driving signal is
-  the bootstrap CI; the p-value is a secondary check.
+- **One method throughout: the paired bootstrap** (percentile, 10K resamples,
+  seeded for reproducibility). The 95% CI and the p-value shown in the table
+  come from the same resampled distribution, so they cannot disagree (#1).
+  It assumes nothing about the shape of the scores, including 0/1 scorers.
+- **Decisions use non-inferiority against a margin** (#1). "No significant
+  drop" is not "quality holds": with 20 examples almost nothing is
+  significant. A scorer passes only when the worst plausible drop (the CI's
+  lower bound) is within `margin` (default 0.05). If a drop is certain it is
+  a regression; otherwise the result is inconclusive, with an estimate of how
+  many examples would settle it.
+- **Decision CIs are Bonferroni-adjusted** across the quality metrics (each
+  scorer plus the error rate), so adding scorers does not add false
+  "don't ship" verdicts (#4). The table still shows plain 95% CIs.
+- **Errors count** (#3). An example that failed in the candidate but not the
+  baseline is a quality loss: the error rate is a quality metric of its own,
+  higher being worse.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
-import scipy.stats  # type: ignore[import-untyped]
 
 from prompteval.eval.runner import RunResult
+
+#: Largest drop (absolute, on a [0, 1] scorer) treated as "quality holds".
+DEFAULT_MARGIN = 0.05
+#: Family-wise error rate for the ship decision.
+ALPHA = 0.05
+_N_RESAMPLES = 10_000
+_SEED = 42
 
 # ---------------------------------------------------------------------------
 # Data shapes
@@ -58,7 +74,13 @@ class MetricDelta:
     ci_low: float  # 95% CI lower bound — same units as `delta` (or `delta_pct` for cost/latency)
     ci_high: float
     p_value: float
-    significant: bool  # convenience: p < 0.05
+    significant: bool  # the 95% CI excludes zero (equivalently p < 0.05)
+    # Bounds used for the decision: Bonferroni-adjusted across the quality
+    # metrics. None for cost and latency, and for hand-built deltas.
+    decision_low: float | None = None
+    decision_high: float | None = None
+    # Quality metrics only: "ok" (within the margin), "regressed", "unclear".
+    status: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,6 +96,13 @@ class ComparisonReport:
     quality_verdict: str  # "no significant regression" / "significant regression on X"
     cost_verdict: str  # "significant 37% reduction (p<0.001)" / similar
     recommendation: str  # "ship tag_b — ..." / "don't ship tag_b — ..." / "inconclusive"
+    margin: float = DEFAULT_MARGIN
+    decision_level: float = 1 - ALPHA  # confidence level of the decision CIs
+    # Error rate over the examples both runs attempted; None when neither errored.
+    error_delta: MetricDelta | None = None
+    errors_a: int = 0
+    errors_b: int = 0
+    n_attempted: int = 0  # examples present in both runs, errored or not
 
 
 # ---------------------------------------------------------------------------
@@ -101,97 +130,111 @@ def _pair_examples(
 # ---------------------------------------------------------------------------
 
 
+def _bootstrap_mean_dist(
+    values: np.ndarray, n_resamples: int = _N_RESAMPLES, seed: int = _SEED
+) -> np.ndarray:
+    """Bootstrap distribution of the mean of `values` (paired diffs)."""
+    out = np.empty(n_resamples)
+    chunk = max(1, 2_000_000 // max(1, len(values)))  # bound memory on large datasets
+    rng = np.random.default_rng(seed)
+    for start in range(0, n_resamples, chunk):
+        size = min(chunk, n_resamples - start)
+        idx = rng.integers(0, len(values), size=(size, len(values)))
+        out[start : start + size] = values[idx].mean(axis=1)
+    return out
+
+
+def _bootstrap_pct_dist(
+    a: np.ndarray, b: np.ndarray, n_resamples: int = _N_RESAMPLES, seed: int = _SEED
+) -> np.ndarray:
+    """Bootstrap distribution of `(sum(b) - sum(a)) / sum(a) * 100`, paired.
+
+    Resamples whose baseline total is zero are dropped (no percent change exists).
+    """
+    if len(a) != len(b):
+        raise ValueError(f"Paired arrays differ in length: {len(a)} vs {len(b)}")
+    out: list[np.ndarray] = []
+    chunk = max(1, 2_000_000 // max(1, len(a)))
+    rng = np.random.default_rng(seed)
+    for start in range(0, n_resamples, chunk):
+        size = min(chunk, n_resamples - start)
+        idx = rng.integers(0, len(a), size=(size, len(a)))
+        sa = a[idx].sum(axis=1)
+        sb = b[idx].sum(axis=1)
+        keep = sa > 0
+        out.append((sb[keep] - sa[keep]) / sa[keep] * 100)
+    return np.concatenate(out) if out else np.empty(0)
+
+
+def _small_sample_widen(dist: np.ndarray, n: int, level: float) -> np.ndarray:
+    """Widen a bootstrap distribution about its mean for small samples.
+
+    The percentile bootstrap is too narrow at small n (it behaves like a z
+    interval, and the plug-in variance is biased by (n-1)/n), so decisions
+    made from it fire too often: measured 7% false "don't ship" at n=20 with
+    six scorers, against a 5% target (#4). Scaling by sqrt(n/(n-1)) * t/z
+    gives it the coverage of the matching t interval. Used for decisions only.
+    """
+    from scipy.stats import norm, t  # type: ignore[import-untyped]
+
+    tail = 1 - (1 - level) / 2
+    factor = math.sqrt(n / (n - 1)) * float(t.ppf(tail, n - 1)) / float(norm.ppf(tail))
+    centre = float(dist.mean())
+    return centre + (dist - centre) * factor
+
+
+def _percentile_ci(dist: np.ndarray, level: float) -> tuple[float, float]:
+    if dist.size == 0:
+        return 0.0, 0.0
+    tail = (1 - level) / 2 * 100
+    lo, hi = np.percentile(dist, [tail, 100 - tail])
+    return float(lo), float(hi)
+
+
+def _bootstrap_p(dist: np.ndarray) -> float:
+    """Two-sided bootstrap p-value for H0: the statistic is zero.
+
+    Consistent with the percentile CI: the 95% CI excludes zero exactly when
+    p < 0.05. A degenerate distribution at zero gives 1.0; at a nonzero
+    constant, 0.0.
+    """
+    if dist.size == 0:
+        return 1.0
+    below = float(np.mean(dist <= 0))
+    above = float(np.mean(dist >= 0))
+    return min(1.0, 2 * min(below, above))
+
+
 def _bootstrap_mean_ci(
     values: np.ndarray,
     confidence: float = 0.95,
-    n_resamples: int = 10_000,
-    seed: int = 42,
+    n_resamples: int = _N_RESAMPLES,
+    seed: int = _SEED,
 ) -> tuple[float, float]:
-    """95% bootstrap CI on the mean of `values`, percentile method.
-
-    Seeded RNG so the same data produces the same CI bounds across runs —
-    important for snapshot-style tests + reproducible reports.
-    """
+    """Percentile bootstrap CI on the mean of `values`."""
     if len(values) < 2:
-        # Single-sample CI is the value itself ± nothing. Avoid scipy's error.
         v = float(values[0]) if len(values) == 1 else 0.0
         return v, v
-    rng = np.random.default_rng(seed)
-    result = scipy.stats.bootstrap(
-        (values,),
-        np.mean,
-        confidence_level=confidence,
-        method="percentile",
-        n_resamples=n_resamples,
-        random_state=rng,
-    )
-    return float(result.confidence_interval.low), float(result.confidence_interval.high)
+    return _percentile_ci(_bootstrap_mean_dist(values, n_resamples, seed), confidence)
 
 
 def _bootstrap_percent_change_ci(
     a: np.ndarray,
     b: np.ndarray,
     confidence: float = 0.95,
-    n_resamples: int = 10_000,
-    seed: int = 42,
+    n_resamples: int = _N_RESAMPLES,
+    seed: int = _SEED,
 ) -> tuple[float, float]:
-    """95% bootstrap CI on percent change `(total_b - total_a) / total_a * 100`.
-
-    Paired bootstrap: resample example indices, recompute the % change from
-    the resampled paired totals. Custom loop because scipy.stats.bootstrap's
-    statistic signature wants a single sample, not paired arrays.
-    """
+    """Paired percentile bootstrap CI on the percent change of totals."""
     if len(a) != len(b):
         raise ValueError(f"Paired arrays differ in length: {len(a)} vs {len(b)}")
     if len(a) < 2:
-        # Degenerate — no resampling possible.
         total_a = float(a.sum())
         if total_a == 0:
             return 0.0, 0.0
         pct = (float(b.sum()) - total_a) / total_a * 100
         return pct, pct
-
-    rng = np.random.default_rng(seed)
-    n = len(a)
-    deltas_pct: list[float] = []
-    for _ in range(n_resamples):
-        idx = rng.integers(0, n, size=n)
-        a_sum = float(a[idx].sum())
-        b_sum = float(b[idx].sum())
-        if a_sum == 0:
-            # Resample that hit only zero-cost examples — skip rather than div-by-zero.
-            # Rare in practice; if it dominates the CI we have bigger problems.
-            continue
-        deltas_pct.append((b_sum - a_sum) / a_sum * 100)
-    if not deltas_pct:
-        return 0.0, 0.0
-    deltas_pct.sort()
-    lo_idx = int((1 - confidence) / 2 * len(deltas_pct))
-    hi_idx = int((1 + confidence) / 2 * len(deltas_pct)) - 1
-    return deltas_pct[lo_idx], deltas_pct[hi_idx]
-
-
-def _paired_p_value(a: np.ndarray, b: np.ndarray) -> float:
-    """Paired t-test p-value (two-sided) for H0: mean(b - a) == 0.
-
-    Constant-diff edge cases handled explicitly because scipy returns NaN
-    when the variance of differences is zero:
-      - All diffs == 0     → no signal at all → p = 1.0
-      - All diffs == k ≠ 0 → perfect signal (every paired example agrees on
-                              the same nonzero delta) → p ≈ 0.0
-    Real-world data won't hit these (every API call has noise), but synthetic
-    test data does — and the report should still be sensible.
-    """
-    if len(a) < 2 or len(b) < 2:
-        return 1.0
-    diffs = b - a
-    if np.allclose(diffs, diffs[0]):
-        return 1.0 if np.allclose(diffs[0], 0) else 0.0
-    result = scipy.stats.ttest_rel(b, a)
-    p = float(result.pvalue)
-    if np.isnan(p):
-        return 1.0
-    return p
+    return _percentile_ci(_bootstrap_pct_dist(a, b, n_resamples, seed), confidence)
 
 
 # ---------------------------------------------------------------------------
@@ -199,31 +242,51 @@ def _paired_p_value(a: np.ndarray, b: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _build_mean_delta(
+    name: str,
+    values_a: np.ndarray,
+    values_b: np.ndarray,
+    decision_level: float,
+) -> MetricDelta:
+    """Paired comparison of a [0, 1] metric (a scorer, or the error rate).
+
+    The delta is in original units: a percent change is meaningless when the
+    baseline can be 0.
+    """
+    diffs = values_b - values_a
+    if len(diffs) >= 2:
+        dist = _bootstrap_mean_dist(diffs)
+        ci_low, ci_high = _percentile_ci(dist, 0.95)
+        dec_low, dec_high = _percentile_ci(
+            _small_sample_widen(dist, len(diffs), decision_level), decision_level
+        )
+        p = _bootstrap_p(dist)
+    else:
+        ci_low = ci_high = dec_low = dec_high = float(diffs.mean())
+        p = 1.0
+    return MetricDelta(
+        name=name,
+        value_a=float(values_a.mean()),
+        value_b=float(values_b.mean()),
+        delta=float(diffs.mean()),
+        delta_pct=None,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        p_value=p,
+        significant=p < ALPHA,
+        decision_low=dec_low,
+        decision_high=dec_high,
+    )
+
+
 def _build_scorer_delta(
     name: str,
     scores_a: np.ndarray,
     scores_b: np.ndarray,
+    decision_level: float = 1 - ALPHA,
 ) -> MetricDelta:
-    """Paired comparison for one scorer. Scores are typically in [0, 1]; delta
-    is reported in original units (NOT percent change, which is meaningless
-    when a denominator can be 0)."""
-    mean_a = float(scores_a.mean())
-    mean_b = float(scores_b.mean())
-    diffs = scores_b - scores_a
-    delta = float(diffs.mean())
-    ci_low, ci_high = _bootstrap_mean_ci(diffs)
-    p = _paired_p_value(scores_a, scores_b)
-    return MetricDelta(
-        name=name,
-        value_a=mean_a,
-        value_b=mean_b,
-        delta=delta,
-        delta_pct=None,  # percent change is misleading for [0, 1] scores
-        ci_low=ci_low,
-        ci_high=ci_high,
-        p_value=p,
-        significant=p < 0.05,
-    )
+    """Paired comparison for one scorer (scores in [0, 1])."""
+    return _build_mean_delta(name, scores_a, scores_b, decision_level)
 
 
 def _build_relative_delta(
@@ -231,15 +294,17 @@ def _build_relative_delta(
     values_a: np.ndarray,
     values_b: np.ndarray,
 ) -> MetricDelta:
-    """Paired comparison for cost or latency. Reports % change (the metric
-    users care about) with paired-bootstrap CI on that % change."""
+    """Paired comparison for cost or latency: % change of totals with its CI."""
     total_a = float(values_a.sum())
     total_b = float(values_b.sum())
-    # Defensive: report 0 change when there's no baseline cost to divide by.
     delta_pct: float | None = (total_b - total_a) / total_a * 100 if total_a > 0 else None
-    ci_low, ci_high = _bootstrap_percent_change_ci(values_a, values_b)
-    p = _paired_p_value(values_a, values_b)
-    # For absolute delta, use means so cost and latency have comparable shapes.
+    if len(values_a) >= 2:
+        dist = _bootstrap_pct_dist(values_a, values_b)
+        ci_low, ci_high = _percentile_ci(dist, 0.95)
+        p = _bootstrap_p(dist)
+    else:
+        ci_low, ci_high = _bootstrap_percent_change_ci(values_a, values_b)
+        p = 1.0
     return MetricDelta(
         name=name,
         value_a=float(values_a.mean()),
@@ -249,7 +314,7 @@ def _build_relative_delta(
         ci_low=ci_low,
         ci_high=ci_high,
         p_value=p,
-        significant=p < 0.05,
+        significant=p < ALPHA and delta_pct is not None,
     )
 
 
@@ -268,26 +333,57 @@ def _format_p(p: float) -> str:
     return f"{p:.2f}"
 
 
+def _bounds(d: MetricDelta) -> tuple[float, float]:
+    lo = d.decision_low if d.decision_low is not None else d.ci_low
+    hi = d.decision_high if d.decision_high is not None else d.ci_high
+    return lo, hi
+
+
+def _quality_status(d: MetricDelta, margin: float, lower_is_better: bool = False) -> str:
+    """ok: the worst plausible change is within the margin. regressed: a drop is
+    certain (and may exceed the margin). unclear: neither."""
+    lo, hi = _bounds(d)
+    if lower_is_better:  # error rate: an increase is the bad direction
+        lo, hi = -hi, -lo
+    if lo >= -margin:
+        return "ok"
+    if hi < 0:
+        return "regressed"
+    return "unclear"
+
+
+def _examples_needed(d: MetricDelta, n: int, margin: float, lower_is_better: bool) -> int | None:
+    """Rough total sample size at which the decision CI would clear the margin,
+    assuming the measured change holds (CI width shrinks as 1/sqrt(n))."""
+    lo, hi = _bounds(d)
+    delta = -d.delta if lower_is_better else d.delta
+    room = delta + margin
+    half = (hi - lo) / 2
+    if n <= 0 or room <= 0 or half <= 0:
+        return None
+    return math.ceil(n * (half / room) ** 2)
+
+
 def _make_verdicts(
     tag_b: str,
     scorer_deltas: list[MetricDelta],
     cost_delta: MetricDelta,
+    *,
+    margin: float = DEFAULT_MARGIN,
+    error_delta: MetricDelta | None = None,
+    n: int = 0,
 ) -> tuple[str, str, str]:
-    """Quality + cost verdict + ship/don't-ship recommendation.
+    """Quality verdict, cost verdict and recommendation.
 
-    Quality regression = any scorer with delta < 0 AND p < 0.05. We don't
-    treat "delta < 0 but not significant" as regression — that's the whole
-    point of significance testing.
+    Quality is decided per metric against `margin` (see the module docstring):
+    any regression → don't ship; anything unclear → inconclusive; otherwise
+    the cost decides.
     """
-    regressions = [d for d in scorer_deltas if d.delta < 0 and d.significant]
-
-    if regressions:
-        names = ", ".join(r.name for r in regressions)
-        quality_verdict = f"significant regression on {names}"
-    else:
-        quality_verdict = (
-            "no significant regression (all quality deltas overlap zero or are positive)"
-        )
+    metrics: list[tuple[MetricDelta, bool]] = [(d, False) for d in scorer_deltas]
+    if error_delta is not None:
+        metrics.append((error_delta, True))
+    regressed = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "regressed"]
+    unclear = [(d, lib) for d, lib in metrics if _quality_status(d, margin, lib) == "unclear"]
 
     if cost_delta.significant and cost_delta.delta_pct is not None:
         magnitude = abs(cost_delta.delta_pct)
@@ -298,20 +394,44 @@ def _make_verdicts(
     else:
         cost_verdict = "no significant cost change"
 
-    # Recommendation
-    if regressions:
-        names = ", ".join(r.name for r in regressions)
+    if regressed:
+        names = ", ".join(_metric_label(d, lib) for d, lib in regressed)
+        quality_verdict = f"significant regression on {names}"
         recommendation = f"don't ship {tag_b} — significant regression on {names}"
-    elif cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct < 0:
+        return quality_verdict, cost_verdict, recommendation
+
+    if unclear:
+        names = ", ".join(_metric_label(d, lib) for d, lib in unclear)
+        worst = max((_bounds(d)[1] if lib else -_bounds(d)[0]) for d, lib in unclear)
+        quality_verdict = (
+            f"can't rule out a drop larger than {margin:.2f} on {names} "
+            f"(could be up to {worst:.2f} worse)"
+        )
+        needed = [_examples_needed(d, n, margin, lib) for d, lib in unclear]
+        if all(x is not None for x in needed):
+            target = max(x for x in needed if x is not None)
+            advice = f"about {target} examples would settle it (you have {n})"
+        else:
+            advice = "the measured drop is already beyond the margin; add examples to confirm"
+        recommendation = f"inconclusive — {names} could be up to {worst:.2f} worse; {advice}"
+        return quality_verdict, cost_verdict, recommendation
+
+    quality_verdict = f"holds — no metric can have dropped by more than {margin:.2f}"
+    if cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct < 0:
         recommendation = f"ship {tag_b} — cost savings real, quality holds"
     elif cost_delta.significant and cost_delta.delta_pct is not None and cost_delta.delta_pct > 0:
         recommendation = (
             f"{tag_b} is significantly more expensive — only ship if other benefits justify"
         )
     else:
-        recommendation = "inconclusive — increase sample size or compare again"
-
+        recommendation = (
+            "inconclusive on cost — quality holds within the margin, no significant cost change"
+        )
     return quality_verdict, cost_verdict, recommendation
+
+
+def _metric_label(d: MetricDelta, lower_is_better: bool) -> str:
+    return "error rate" if lower_is_better else d.name
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +439,9 @@ def _make_verdicts(
 # ---------------------------------------------------------------------------
 
 
-def compute_comparison(run_a: RunResult, run_b: RunResult) -> ComparisonReport:
+def compute_comparison(
+    run_a: RunResult, run_b: RunResult, *, margin: float = DEFAULT_MARGIN
+) -> ComparisonReport:
     """Pair two runs by example id and produce a ComparisonReport.
 
     Raises ValueError if fewer than 2 paired examples are available — bootstrap
@@ -330,16 +452,37 @@ def compute_comparison(run_a: RunResult, run_b: RunResult) -> ComparisonReport:
     if n < 2:
         raise ValueError(
             f"Cannot compare {run_a.tag!r} vs {run_b.tag!r}: only {n} paired examples "
-            f"after excluding errors. Need at least 2 for meaningful stats."
+            f"after excluding errors ({_count_errors(run_a)} errored in {run_a.tag!r}, "
+            f"{_count_errors(run_b)} in {run_b.tag!r}). Need at least 2 for meaningful stats."
         )
 
-    # Build aligned scorer-name → array maps so we can paired-compare.
+    if not 0 <= margin < 1:
+        raise ValueError(f"margin must be in [0, 1), got {margin}")
+
+    # Error rate over the examples both runs attempted (#3).
+    attempted = sorted({e.id for e in run_a.examples} & {e.id for e in run_b.examples})
+    err_a_by_id = {e.id: e.error is not None for e in run_a.examples}
+    err_b_by_id = {e.id: e.error is not None for e in run_b.examples}
+    errs_a = np.array([float(err_a_by_id[i]) for i in attempted])
+    errs_b = np.array([float(err_b_by_id[i]) for i in attempted])
+    any_errors = bool(errs_a.sum() or errs_b.sum())
+
     common_scorer_names = _common_scorer_names(run_a, run_b)
+    # Bonferroni across the quality metrics, so more scorers ≠ more false alarms (#4).
+    k = len(common_scorer_names) + (1 if any_errors else 0)
+    decision_level = 1 - ALPHA / max(1, k)
+
     scorer_deltas: list[MetricDelta] = []
     for s_name in common_scorer_names:
         scores_a = np.array([_score_for(run_a.examples[i], s_name) for i in idx_a], dtype=float)
         scores_b = np.array([_score_for(run_b.examples[i], s_name) for i in idx_b], dtype=float)
-        scorer_deltas.append(_build_scorer_delta(s_name, scores_a, scores_b))
+        d = _build_scorer_delta(s_name, scores_a, scores_b, decision_level)
+        scorer_deltas.append(replace(d, status=_quality_status(d, margin)))
+
+    error_delta: MetricDelta | None = None
+    if any_errors:
+        e = _build_mean_delta("error rate", errs_a, errs_b, decision_level)
+        error_delta = replace(e, status=_quality_status(e, margin, lower_is_better=True))
 
     costs_a = np.array([run_a.examples[i].cost.total_cost for i in idx_a], dtype=float)
     costs_b = np.array([run_b.examples[i].cost.total_cost for i in idx_b], dtype=float)
@@ -350,7 +493,7 @@ def compute_comparison(run_a: RunResult, run_b: RunResult) -> ComparisonReport:
     latency_delta = _build_relative_delta("avg latency", latencies_a, latencies_b)
 
     quality_verdict, cost_verdict, recommendation = _make_verdicts(
-        run_b.tag, scorer_deltas, cost_delta
+        run_b.tag, scorer_deltas, cost_delta, margin=margin, error_delta=error_delta, n=n
     )
 
     return ComparisonReport(
@@ -363,7 +506,17 @@ def compute_comparison(run_a: RunResult, run_b: RunResult) -> ComparisonReport:
         quality_verdict=quality_verdict,
         cost_verdict=cost_verdict,
         recommendation=recommendation,
+        margin=margin,
+        decision_level=decision_level,
+        error_delta=error_delta,
+        errors_a=int(errs_a.sum()),
+        errors_b=int(errs_b.sum()),
+        n_attempted=len(attempted),
     )
+
+
+def _count_errors(run: RunResult) -> int:
+    return sum(1 for e in run.examples if e.error is not None)
 
 
 def _common_scorer_names(run_a: RunResult, run_b: RunResult) -> list[str]:
@@ -399,6 +552,11 @@ def render_text(report: ComparisonReport) -> str:
     lines: list[str] = []
     lines.append(f"=== {report.tag_a} vs {report.tag_b} ===")
     lines.append(f"Paired examples: {report.n_paired}")
+    if report.error_delta is not None:
+        lines.append(
+            f"Errors: {report.errors_a} in {report.tag_a}, {report.errors_b} in {report.tag_b} "
+            f"(of {report.n_attempted} attempted by both)"
+        )
     lines.append("")
 
     header = f"{'':<26}{report.tag_a:<14}{report.tag_b:<16}{'Δ':<14}{'95% CI':<22}{'p-value':<10}"
@@ -417,6 +575,17 @@ def render_text(report: ComparisonReport) -> str:
             f"{delta_str:<14}"
             f"{ci_str:<22}"
             f"{p_str:<10}"
+        )
+
+    if report.error_delta is not None:
+        e = report.error_delta
+        lines.append(
+            f"{'error rate':<26}"
+            f"{e.value_a:<14.0%}"
+            f"{e.value_b:<16.0%}"
+            f"{_signed(e.delta):<14}"
+            f"{f'[{_signed(e.ci_low)}, {_signed(e.ci_high)}]':<22}"
+            f"{_format_p(e.p_value):<10}"
         )
 
     lines.append("─" * len(header))
@@ -460,8 +629,21 @@ def render_text(report: ComparisonReport) -> str:
     lines.append(f"Cost verdict:     {report.cost_verdict}")
     lines.append("")
     lines.append(f"Recommendation:   {report.recommendation}")
+    lines.append("")
+    lines.append(_method_note(report))
 
     return "\n".join(lines)
+
+
+def _method_note(report: ComparisonReport) -> str:
+    k = len(report.scorer_deltas) + (1 if report.error_delta is not None else 0)
+    adjusted = (
+        f", adjusted for {k} quality metrics ({report.decision_level:.1%} CIs)" if k > 1 else ""
+    )
+    return (
+        f"Method: paired bootstrap; quality holds when no metric can have dropped by more "
+        f"than {report.margin:.2f}{adjusted}."
+    )
 
 
 def _signed(x: float) -> str:
@@ -482,6 +664,17 @@ def render_html(report: ComparisonReport) -> str:
     just with semantic markup and color-coded verdict badges.
     """
     rec_class = _recommendation_class(report.recommendation)
+    errors_meta = (
+        f" &middot; errors: {report.errors_a} in {_h(report.tag_a)}, "
+        f"{report.errors_b} in {_h(report.tag_b)} (of {report.n_attempted})"
+        if report.error_delta is not None
+        else ""
+    )
+    error_row = (
+        _html_scorer_row(report.error_delta, lower_is_better=True)
+        if report.error_delta is not None
+        else ""
+    )
 
     scorer_rows = "\n".join(_html_scorer_row(d) for d in report.scorer_deltas)
     cost_row = _html_relative_row(
@@ -534,7 +727,7 @@ def render_html(report: ComparisonReport) -> str:
 </head>
 <body>
 <h1>{_h(report.tag_a)} vs {_h(report.tag_b)}</h1>
-<div class="meta">Paired examples: {report.n_paired}</div>
+<div class="meta">Paired examples: {report.n_paired}{errors_meta}</div>
 
 <table>
 <thead>
@@ -549,6 +742,7 @@ def render_html(report: ComparisonReport) -> str:
 </thead>
 <tbody>
 {scorer_rows}
+{error_row}
 {cost_row}
 {latency_row}
 </tbody>
@@ -562,7 +756,7 @@ def render_html(report: ComparisonReport) -> str:
 <div class="rec {rec_class}">Recommendation: {_h(report.recommendation)}</div>
 </div>
 
-<footer>Generated by prompteval &mdash; paired bootstrap CIs + paired t-test (alpha=0.05).</footer>
+<footer>Generated by prompteval &mdash; {_h(_method_note(report))}</footer>
 </body>
 </html>
 """
@@ -578,9 +772,9 @@ def _recommendation_class(recommendation: str) -> str:
     return "inconclusive"
 
 
-def _html_scorer_row(d: MetricDelta) -> str:
+def _html_scorer_row(d: MetricDelta, lower_is_better: bool = False) -> str:
     sig_class = " sig" if d.significant else ""
-    delta_class = _delta_class(d.delta, d.significant)
+    delta_class = _delta_class(-d.delta if lower_is_better else d.delta, d.significant)
     return (
         "<tr>"
         f"<td>{_h(d.name)}</td>"

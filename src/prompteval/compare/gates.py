@@ -9,9 +9,16 @@ in v1:
                 (Scorers are in [0, 1], so "5%" maps to a 0.05 absolute drop —
                 what most users actually mean when they say "5% quality loss".)
 
-Only *statistically significant* breaches count (p < 0.05). A 4% cost rise that
-isn't significant won't trip `cost+3%` — that's the whole point of having
-significance testing in the report.
+Two modes:
+
+- **bound** (default): gate on the worst plausible case, the 95% CI. `cost+X%`
+  fails when the cost change could be above +X%; `quality-Y%` fails when any
+  scorer could have dropped by more than Y points, or the error rate could
+  have risen by more than Y points. A thin or noisy dataset fails until it has
+  enough examples to rule the breach out (#2): a safety gate must not get
+  weaker as the evidence gets thinner.
+- **significant** (the v0.1 behaviour): only statistically significant
+  breaches of the measured change count.
 
 Whitespace is tolerated. Case-insensitive. Examples:
 
@@ -77,24 +84,98 @@ def parse_gate_spec(spec: str) -> list[GateClause]:
     return clauses
 
 
-def evaluate_gates(report: ComparisonReport, clauses: list[GateClause]) -> list[GateBreach]:
+GATE_MODES = ("bound", "significant")
+
+
+def evaluate_gates(
+    report: ComparisonReport, clauses: list[GateClause], mode: str = "bound"
+) -> list[GateBreach]:
     """Return the list of breached clauses. Empty list = gate passed.
 
-    Only counts breaches that are *statistically significant* — a noisy 12%
-    cost wobble with p=0.3 doesn't trip `cost+10%`. That's the gate's whole
-    job: keep CI green when the signal is real, red when it isn't.
+    See the module docstring for the two modes.
     """
+    if mode not in GATE_MODES:
+        raise GateSpecError(f"Unknown gate mode {mode!r}; expected one of {GATE_MODES}.")
     breaches: list[GateBreach] = []
     for clause in clauses:
         if clause.metric == "cost":
-            breach = _evaluate_cost_clause(clause, report)
+            breach = (
+                _bound_cost_clause(clause, report)
+                if mode == "bound"
+                else _evaluate_cost_clause(clause, report)
+            )
         elif clause.metric == "quality":
-            breach = _evaluate_quality_clause(clause, report)
+            breach = (
+                _bound_quality_clause(clause, report)
+                if mode == "bound"
+                else _evaluate_quality_clause(clause, report)
+            )
         else:  # pragma: no cover — parse_gate_spec guarantees this
             continue
         if breach is not None:
             breaches.append(breach)
     return breaches
+
+
+_NARROW = "add examples to narrow the range"
+
+
+def _bound_cost_clause(clause: GateClause, report: ComparisonReport) -> GateBreach | None:
+    """cost+X% fails when the CI's upper bound is above +X%; cost-X% (a required
+    reduction) fails when the reduction isn't certain to reach X%."""
+    cost = report.cost_delta
+    if cost.delta_pct is None:
+        return None
+    if cost.ci_high <= clause.threshold_pct:
+        return None
+    measured = (
+        f"measured {cost.delta_pct:+.1f}%, 95% CI [{cost.ci_low:+.1f}%, {cost.ci_high:+.1f}%]"
+    )
+    if clause.threshold_pct >= 0 and cost.delta_pct > clause.threshold_pct:
+        detail = (
+            f"cost regressed {cost.delta_pct:+.1f}% (95% CI [{cost.ci_low:+.1f}%, "
+            f"{cost.ci_high:+.1f}%]); gate was cost+{clause.threshold_pct:g}%"
+        )
+    elif clause.threshold_pct >= 0:
+        detail = (
+            f"cost could be up {cost.ci_high:+.1f}% ({measured}); gate was "
+            f"cost+{clause.threshold_pct:g}%"
+        )
+    else:
+        detail = (
+            f"cost reduction of {abs(clause.threshold_pct):g}% is not certain ({measured}); "
+            f"gate was cost{clause.threshold_pct:g}%"
+        )
+    if cost.delta_pct <= clause.threshold_pct:
+        detail += f" — the measured change is within the gate; {_NARROW}"
+    return GateBreach(clause=clause, actual_pct=cost.ci_high, detail=detail)
+
+
+def _bound_quality_clause(clause: GateClause, report: ComparisonReport) -> GateBreach | None:
+    """quality-Y% fails when any scorer's CI lower bound is below -Y/100, or the
+    error rate's CI upper bound is above +Y/100."""
+    if clause.threshold_pct >= 0:
+        return None
+    limit = abs(clause.threshold_pct) / 100.0
+    # (worst plausible drop, label, measured change, ci)
+    worst: list[tuple[float, str, float, tuple[float, float]]] = [
+        (-d.ci_low, f"scorer {d.name!r}", d.delta, (d.ci_low, d.ci_high))
+        for d in report.scorer_deltas
+    ]
+    if report.error_delta is not None:
+        e = report.error_delta
+        worst.append((e.ci_high, "error rate", -e.delta, (e.ci_low, e.ci_high)))
+    breached = [w for w in worst if w[0] > limit]
+    if not breached:
+        return None
+    drop, label, measured, (lo, hi) = max(breached, key=lambda w: w[0])
+    detail = (
+        f"{label} could be {drop:.3f} worse (measured {measured:+.3f}, 95% CI "
+        f"[{lo:+.3f}, {hi:+.3f}]); gate was quality-{abs(clause.threshold_pct):g}%"
+    )
+    if -measured <= limit:
+        detail += f" — the measured change is within the gate; {_NARROW}"
+    return GateBreach(clause=clause, actual_pct=-drop * 100, detail=detail)
 
 
 def _evaluate_cost_clause(clause: GateClause, report: ComparisonReport) -> GateBreach | None:

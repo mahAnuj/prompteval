@@ -15,7 +15,7 @@ professional_tone         0.81        0.83        +0.02    [−0.05, +0.09]  0.5
 total cost                $0.158      $0.099      −37%     [−42%, −32%]   <0.001
 avg latency               1.4s        1.1s        −21%     [−28%, −14%]   <0.001
 
-Quality verdict:  no significant regression
+Quality verdict:  holds — no metric can have dropped by more than 0.05
 Cost verdict:     significant 37% reduction
 Recommendation:   ship v2 — cost savings real, quality holds
 ```
@@ -154,6 +154,15 @@ prompteval compare baseline short-prompt
 
 You get the report shown at the top of this README — paired quality and cost deltas with 95% CIs, p-values, and a plain-English recommendation.
 
+**How the recommendation is decided.** "No significant drop" is not the same as
+"quality holds": with 20 examples almost nothing is significant. So a scorer
+counts as holding only when its worst plausible drop is within a margin (0.05
+by default, `--margin` to change it). A certain drop is a regression; anything
+else is reported as **inconclusive**, with an estimate of how many examples
+would settle it. Examples that fail (timeouts, errors) count against the run
+that failed them, and the decision is adjusted for the number of scorers so
+adding scorers doesn't add false alarms.
+
 ### 8. (Optional but the moat) Lock it into CI
 
 A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml). The core of it:
@@ -164,9 +173,12 @@ A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prom
 - run: prompteval compare baseline candidate --html report.html --fail-on cost+10%,quality-5%
 ```
 
-Any future prompt change gets gated. PR fails if cost regresses >10% or any
-scorer drops >5 percentage points (only statistically significant breaches
-trip the gate). The `--html` report is uploaded as a build artifact and
+Any future prompt change gets gated. PR fails if cost *could* have risen more
+than 10%, or any scorer *could* have dropped more than 5 percentage points,
+judged on the 95% confidence interval. A small or noisy eval therefore fails
+until it has enough examples to rule the breach out, rather than passing
+because nothing reached significance. (`--gate-mode significant` restores the
+v0.1 behaviour of counting only significant breaches.) The `--html` report is uploaded as a build artifact and
 linked from the PR's Checks tab.
 
 See [`examples/github-actions/README.md`](examples/github-actions/README.md)
@@ -184,7 +196,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **210/210 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **224/224 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API
