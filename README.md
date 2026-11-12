@@ -23,6 +23,8 @@ Recommendation:   ship v2 — cost savings real, quality holds
 Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a metric you graph; prompteval treats it as a **comparison axis** alongside quality. See [docs/competitor-scan.md](docs/competitor-scan.md) for verified evidence.
 
 [![PyPI](https://img.shields.io/pypi/v/prompteval-delta)](https://pypi.org/project/prompteval-delta/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/prompteval-delta)](https://pypistats.org/packages/prompteval-delta)
+[![GitHub stars](https://img.shields.io/github/stars/mahAnuj/prompteval?style=flat)](https://github.com/mahAnuj/prompteval/stargazers)
 
 > **Alpha — v0.2.0, on PyPI as [`prompteval-delta`](https://pypi.org/project/prompteval-delta/).**
 > **Do not `pip install prompteval`** — that name on PyPI belongs to an
