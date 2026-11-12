@@ -229,13 +229,16 @@ def run(prompt_path: Path, tag: str, eval_file: Path, model_override: str | None
         marker = "✗" if error else "✓"
         click.echo(f"  [{i}/{n}] {ex_id:<24} {marker} {latency:0.2f}s")
 
-    result = run_eval(
-        eval_def,
-        prompt_path=prompt_path,
-        tag=tag,
-        model=model_override,
-        progress=progress,
-    )
+    try:
+        result = run_eval(
+            eval_def,
+            prompt_path=prompt_path,
+            tag=tag,
+            model=model_override,
+            progress=progress,
+        )
+    except UnknownModelError as err:
+        raise click.ClickException(str(err)) from err
 
     saved_path = save_run(result)
 

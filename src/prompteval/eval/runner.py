@@ -36,7 +36,7 @@ from typing import Any, Protocol
 
 from openai import OpenAI
 
-from prompteval.cost import CostBreakdown, Usage, compute_cost
+from prompteval.cost import CostBreakdown, Usage, compute_cost, get_pricing
 from prompteval.eval.scorer import ScorerResult, is_scorer, scorer_params
 
 # ---------------------------------------------------------------------------
@@ -250,6 +250,8 @@ def run_eval(
     """
     prompt_text = Path(prompt_path).read_text()
     effective_model = model or eval_def.model
+    # Fail before the first (paid) call when the model can't be priced (#5).
+    get_pricing(effective_model)
     examples = _load_dataset(Path(eval_def.dataset))
     runner = eval_def.runner or default_runner
     eff_client = client if client is not None else OpenAI()
@@ -263,8 +265,11 @@ def run_eval(
         output = ""
         scores: list[ScoreOutcome] = []
         cost: CostBreakdown
+        latency_s: float | None = None
         try:
             runner_result = runner(example, prompt_text, effective_model, eff_client)
+            # Latency is the model call(s) only, never scoring or judge time (#6).
+            latency_s = time.perf_counter() - t0
             output = runner_result.output
 
             # v1: one model per eval, so we can sum usages into one Usage and price once.
@@ -275,11 +280,12 @@ def run_eval(
             scores = [_call_scorer(s, example, output) for s in eval_def.scorers]
         except Exception as err:
             error = f"{type(err).__name__}: {err}"
-            # Build a zero-cost CostBreakdown for the error case so aggregations
-            # don't have to special-case None.
-            cost = compute_cost(effective_model, Usage(prompt_tokens=0, completion_tokens=0))
+            # A zero-cost breakdown so aggregations needn't special-case None.
+            # Built directly: the error path must never raise itself (#5).
+            cost = _zero_cost(effective_model)
 
-        latency_s = time.perf_counter() - t0
+        if latency_s is None:  # the runner itself failed: time until the failure
+            latency_s = time.perf_counter() - t0
         results.append(
             ExampleResult(
                 id=example.id,
@@ -399,6 +405,21 @@ def _sum_usages(usages: list[Usage]) -> Usage:
         completion_tokens=sum(u.completion_tokens for u in usages),
         cached_tokens=sum(u.cached_tokens for u in usages),
         reasoning_tokens=sum(u.reasoning_tokens for u in usages),
+    )
+
+
+def _zero_cost(model: str) -> CostBreakdown:
+    """An all-zero cost record, for examples that errored."""
+    return CostBreakdown(
+        model=model,
+        uncached_input_tokens=0,
+        cached_input_tokens=0,
+        output_tokens=0,
+        reasoning_tokens=0,
+        uncached_input_cost=0.0,
+        cached_input_cost=0.0,
+        output_cost=0.0,
+        total_cost=0.0,
     )
 
 

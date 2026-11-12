@@ -409,3 +409,52 @@ def test_run_eval_aggregates_scorer_means(tmp_path: Path) -> None:
 
     result = run_eval(eval_def, prompt_path=prompt, tag="t", client=client)
     assert result.scorer_means["always_one"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# #5: an unknown model fails before any paid call; the error path never raises
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_model_fails_before_any_api_call(tmp_path: Path) -> None:
+    from prompteval.cost import UnknownModelError
+
+    dataset = _write_dataset(tmp_path, [{"id": "a", "input": "hi"}, {"id": "b", "input": "yo"}])
+    prompt = _write_prompt(tmp_path)
+    client = _mock_openai_client()
+    eval_def = Eval(name="e", dataset=dataset, scorers=[always_one], model="not-a-model")
+    with pytest.raises(UnknownModelError):
+        run_eval(eval_def, prompt_path=prompt, tag="t", client=client)
+    client.chat.completions.create.assert_not_called()
+
+
+def test_cost_failure_mid_run_is_recorded_not_raised(tmp_path: Path) -> None:
+    # Negative token counts make compute_cost raise inside the loop; the
+    # example must be recorded as an error and the run must continue.
+    dataset = _write_dataset(tmp_path, [{"id": "a", "input": "hi"}, {"id": "b", "input": "yo"}])
+    prompt = _write_prompt(tmp_path)
+    client = _mock_openai_client(prompt_tokens=-5)
+    eval_def = Eval(name="e", dataset=dataset, scorers=[always_one])
+    result = run_eval(eval_def, prompt_path=prompt, tag="t", client=client)
+    assert [e.error is not None for e in result.examples] == [True, True]
+    assert all(e.cost.total_cost == 0.0 for e in result.examples)
+
+
+def test_latency_excludes_scorer_time(tmp_path: Path) -> None:
+    # #6: a slow scorer (e.g. an LLM judge) must not count as prompt latency.
+    import time as _time
+
+    @scorer
+    def slow(output: str) -> float:
+        _time.sleep(0.2)
+        return 1.0
+
+    dataset = _write_dataset(tmp_path, [{"id": "a", "input": "hi"}])
+    prompt = _write_prompt(tmp_path)
+    result = run_eval(
+        Eval(name="e", dataset=dataset, scorers=[slow]),
+        prompt_path=prompt,
+        tag="t",
+        client=_mock_openai_client(),
+    )
+    assert result.examples[0].latency_s < 0.1
