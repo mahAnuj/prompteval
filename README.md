@@ -37,11 +37,18 @@ Existing eval tools (Braintrust, Langfuse, promptfoo, Phoenix) track cost as a m
 
 | ✅ It is | ❌ It is not |
 |---|---|
-| An **offline** eval framework (think pytest for prompts) | A runtime proxy or LLM gateway |
+| A **pre-release** eval framework (think pytest for prompts): you run it before shipping, not inside your product | A runtime proxy or LLM gateway |
 | Run from your CLI or your CI | Sitting in your prod request path |
 | Compares two prompt versions on quality **and** cost | Caching prod LLM calls |
 | Statistical significance built in | Replacing Helicone / Portkey / LiteLLM |
 | Honest about scorer methodology | A black-box "AI judges your AI" |
+
+**It does call your models.** Measuring real quality and real cost means real
+requests: `run`, `sweep` and `noise` send each example to the model (times
+`--repeats`), plus any `llm_judge` calls in your scorers, on your API key.
+`compare`, the CI gate and the `models` commands make no model calls; they read
+saved runs and local prices. Re-running an unchanged `sweep` reuses saved runs,
+and the GitHub Action makes no calls when the prompt didn't change.
 
 **Closest neighbors:** pytest, [Braintrust Experiments](https://braintrust.dev/), [promptfoo](https://promptfoo.dev/), [Inspect AI](https://inspect.aisi.org.uk/).
 
