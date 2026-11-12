@@ -557,6 +557,11 @@ def _compatibility_warnings(run_a: RunResult, run_b: RunResult) -> tuple[str, ..
             f"{only_a} example(s) only in {run_a.tag!r} and {only_b} only in {run_b.tag!r} "
             "were left out"
         )
+    if run_a.repeats != run_b.repeats:
+        out.append(
+            f"the runs answered each example a different number of times "
+            f"({run_a.repeats} vs {run_b.repeats}), so their noise levels differ"
+        )
     if run_a.params != run_b.params:
         out.append(
             f"the request settings differ ({run_a.params or 'defaults'} vs "

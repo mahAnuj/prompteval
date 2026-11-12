@@ -248,6 +248,13 @@ it says so rather than guessing.
   settings is reused (`--rerun` to force). Add examples and sweep again.
 - `--markdown` and `--html` write the table for a PR, an issue or a post.
 
+**How big a change can your dataset detect?** `prompteval noise --prompt
+prompts/v1.txt` runs the same prompt twice; whatever differs is noise, and it
+prints, per scorer, the size of change that is indistinguishable from it.
+`--repeats K` answers each example K times and averages the scores (costing K
+times more), and `llm_judge` samples at temperature 0 by default, so the judge
+adds as little noise as possible.
+
 `run` and `sweep` call the model for 4 examples at once (`--concurrency`, lower
 it if your provider rate-limits you); rate limits and server errors are retried
 with backoff, and results are saved in dataset order either way.
@@ -311,7 +318,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **287/287 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **291/291 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

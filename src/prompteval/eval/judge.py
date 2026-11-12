@@ -57,6 +57,7 @@ def llm_judge(
     *,
     model: str = "gpt-4o-mini",
     client: Any = None,
+    temperature: float | None = 0.0,
 ) -> float:
     """Ask an LLM to score `text` against `rubric`. Returns a float in [0, 1].
 
@@ -75,12 +76,17 @@ def llm_judge(
     if client is None:
         client = _get_default_client()
 
+    # Temperature 0 by default (#14): a judge that samples adds its own noise
+    # to every score. Pass temperature=None for the provider's default (some
+    # reasoning models accept no other value).
+    extra = {} if temperature is None else {"temperature": temperature}
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": rubric},
             {"role": "user", "content": text},
         ],
+        **extra,
     )
     _record_usage(model, response)
     raw = response.choices[0].message.content or ""

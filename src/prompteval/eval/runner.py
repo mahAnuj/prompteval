@@ -130,6 +130,7 @@ class RunResult:
     base_url: str | None = None
     price_source: str | None = None
     params: dict[str, Any] = field(default_factory=dict)  # request settings used (#10)
+    repeats: int = 1  # answers per example (#14); scores are their mean
 
     @property
     def total_cost(self) -> float:
@@ -340,6 +341,7 @@ def run_eval(
     api_key_env: str | None = None,
     params: dict[str, Any] | None = None,
     concurrency: int = 1,
+    repeats: int = 1,
 ) -> RunResult:
     """Execute `eval_def` against the prompt at `prompt_path`.
 
@@ -353,6 +355,11 @@ def run_eval(
 
     `prices` adds or overrides model prices (user `prices.yaml` / `--price`),
     and `base_url` / `api_key_env` override the Eval's endpoint (#8).
+
+    `repeats` answers each example that many times (#14): each scorer's score
+    is the mean over the answers, cost and latency are per call (the mean),
+    the judge cost is what all of them cost, and the first answer is kept as
+    the output. Any failed answer fails the example.
 
     `concurrency` runs that many examples at once (threads); results keep
     dataset order. Rate limits and 5xx responses are retried with backoff by
@@ -389,23 +396,33 @@ def run_eval(
         cost: CostBreakdown
         latency_s: float | None = None
         try:
-            runner_result = runner(example, prompt_text, effective_model, eff_client)
-            # Latency is the model call(s) only, never scoring or judge time (#6).
-            latency_s = time.perf_counter() - t0
-            output = runner_result.output
+            attempts = max(1, repeats)
+            call_time = 0.0
+            usages: list[Usage] = []
+            per_attempt: list[list[ScoreOutcome]] = []
+            judge_calls: list[tuple[str, int, int, int]] = []
+            for attempt in range(attempts):
+                t_call = time.perf_counter()
+                runner_result = runner(example, prompt_text, effective_model, eff_client)
+                # Latency is the model call(s) only, never scoring or judge time (#6).
+                call_time += time.perf_counter() - t_call
+                if attempt == 0:
+                    output = runner_result.output
+                usages.extend(runner_result.usages)
+                token = JUDGE_CALLS.set(judge_calls)
+                try:
+                    per_attempt.append(
+                        [_call_scorer(s, example, runner_result.output) for s in eval_def.scorers]
+                    )
+                finally:
+                    JUDGE_CALLS.reset(token)
+            latency_s = call_time / attempts
 
             # v1: one model per eval, so we can sum usages into one Usage and price once.
             # v1.1 (multi-model runners) will need per-call pricing — different shape.
-            summed = _sum_usages(runner_result.usages)
-            cost = compute_cost(effective_model, summed, pricing)
-
-            judge_calls: list[tuple[str, int, int, int]] = []
-            token = JUDGE_CALLS.set(judge_calls)
-            try:
-                scores = [_call_scorer(s, example, output) for s in eval_def.scorers]
-            finally:
-                JUDGE_CALLS.reset(token)
-                judge_cost = _judge_cost(judge_calls, prices)
+            cost = _per_call(compute_cost(effective_model, _sum_usages(usages), pricing), attempts)
+            scores = _mean_scores(per_attempt)
+            judge_cost = _judge_cost(judge_calls, prices)
         except Exception as err:
             error = f"{type(err).__name__}: {err}"
             # A zero-cost breakdown so aggregations needn't special-case None.
@@ -455,6 +472,7 @@ def run_eval(
         dataset_sha256=hashlib.sha256(Path(eval_def.dataset).read_bytes()).hexdigest(),
         base_url=effective_base_url,
         params=effective_params,
+        repeats=max(1, repeats),
         price_source=(
             f"user-supplied ({pricing.notes or 'custom'})"
             if prices and effective_model in prices
@@ -578,6 +596,39 @@ def _sum_usages(usages: list[Usage]) -> Usage:
         cached_tokens=sum(u.cached_tokens for u in usages),
         reasoning_tokens=sum(u.reasoning_tokens for u in usages),
     )
+
+
+def _per_call(total: CostBreakdown, calls: int) -> CostBreakdown:
+    """A cost record for `calls` answers, expressed per answer."""
+    if calls == 1:
+        return total
+    return CostBreakdown(
+        model=total.model,
+        uncached_input_tokens=round(total.uncached_input_tokens / calls),
+        cached_input_tokens=round(total.cached_input_tokens / calls),
+        output_tokens=round(total.output_tokens / calls),
+        reasoning_tokens=round(total.reasoning_tokens / calls),
+        uncached_input_cost=total.uncached_input_cost / calls,
+        cached_input_cost=total.cached_input_cost / calls,
+        output_cost=total.output_cost / calls,
+        total_cost=total.total_cost / calls,
+    )
+
+
+def _mean_scores(per_attempt: list[list[ScoreOutcome]]) -> list[ScoreOutcome]:
+    """Each scorer's mean over the answers; reasoning and metadata from the first."""
+    if len(per_attempt) == 1:
+        return per_attempt[0]
+    first = per_attempt[0]
+    return [
+        ScoreOutcome(
+            name=s.name,
+            score=sum(a[i].score for a in per_attempt) / len(per_attempt),
+            reasoning=s.reasoning,
+            metadata=s.metadata,
+        )
+        for i, s in enumerate(first)
+    ]
 
 
 def _judge_cost(

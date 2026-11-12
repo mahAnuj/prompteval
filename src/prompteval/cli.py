@@ -18,6 +18,7 @@ from typing import Any
 import click
 
 from prompteval.compare import (
+    ComparisonReport,
     compute_comparison,
     evaluate_gates,
     parse_gate_spec,
@@ -324,6 +325,13 @@ def _iter_stock_scorers() -> list[tuple[str, str]]:
     show_default=True,
     help="Examples run at once. Lower it if the provider rate-limits you.",
 )
+@click.option(
+    "--repeats",
+    type=click.IntRange(1, 20),
+    default=1,
+    show_default=True,
+    help="Answers per example; scores are their mean. Costs that many times more.",
+)
 def run(
     prompt_path: Path,
     tag: str,
@@ -335,6 +343,7 @@ def run(
     prices_file: Path | None,
     param_specs: tuple[str, ...],
     concurrency: int,
+    repeats: int,
 ) -> None:
     """Run an Eval against a prompt and persist the results.
 
@@ -375,6 +384,7 @@ def run(
             api_key_env=api_key_env or endpoint.api_key_env,
             params=_parse_params(param_specs),
             concurrency=concurrency,
+            repeats=repeats,
         )
     except (UnknownModelError, ValueError) as err:
         raise click.ClickException(str(err)) from err
@@ -553,6 +563,90 @@ def sweep(
     if markdown_path is not None:
         markdown_path.write_text(render_sweep_markdown(report), encoding="utf-8")
         click.echo(f"Markdown report: {markdown_path}")
+
+
+@main.command()
+@click.option(
+    "--prompt",
+    "prompt_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--eval-file",
+    "eval_file",
+    default="evals/eval.py",
+    show_default=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option("--model", "model_override", default=None, help="Override the Eval's model.")
+@click.option("--repeats", type=click.IntRange(1, 20), default=1, show_default=True)
+@click.option("--concurrency", type=click.IntRange(1, 64), default=4, show_default=True)
+def noise(
+    prompt_path: Path, eval_file: Path, model_override: str | None, repeats: int, concurrency: int
+) -> None:
+    """How big a change can this dataset detect? Runs the same prompt twice.
+
+    Any difference between two runs of an unchanged prompt is noise (sampling,
+    or the judge). Its range is the smallest change `compare` can tell apart
+    from noise on this dataset. Costs two runs.
+    """
+    eval_def = _discover_eval(eval_file)
+    prices, endpoints = _user_prices(eval_file, None)
+    model = model_override or eval_def.model
+    endpoint = endpoints.get(model, ModelEndpoint())
+    runs = []
+    for i in (1, 2):
+        click.echo(f"run {i} of 2...")
+        try:
+            runs.append(
+                run_eval(
+                    eval_def,
+                    prompt_path=prompt_path,
+                    tag=f"noise-{i}",
+                    model=model_override,
+                    prices=prices,
+                    base_url=endpoint.base_url,
+                    api_key_env=endpoint.api_key_env,
+                    concurrency=concurrency,
+                    repeats=repeats,
+                )
+            )
+        except (UnknownModelError, ValueError) as err:
+            raise click.ClickException(str(err)) from err
+    try:
+        report = compute_comparison(runs[0], runs[1])
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+    click.echo("")
+    click.echo(render_noise(report, repeats))
+
+
+def render_noise(report: ComparisonReport, repeats: int) -> str:
+    """The noise floor per scorer, from a comparison of a prompt with itself."""
+    lines = [f"Same prompt, two runs, {report.n_paired} examples:", ""]
+    noisy = []
+    for d in report.scorer_deltas:
+        floor = max(abs(d.ci_low), abs(d.ci_high))
+        lines.append(
+            f"  {d.name:<28} run-to-run difference {d.delta:+.3f}; "
+            f"changes smaller than ±{floor:.3f} look like noise"
+        )
+        if d.significant:
+            noisy.append(d.name)
+    lines.append("")
+    if noisy:
+        lines.append(
+            f"Warning: {', '.join(noisy)} scored differently on an unchanged prompt. The answers "
+            f"or the judge vary a lot; try --repeats {max(3, repeats + 2)} or temperature 0 "
+            f"(--param temperature=0)."
+        )
+    else:
+        lines.append(
+            "No scorer moved beyond noise. "
+            "To detect smaller changes, add examples or use --repeats."
+        )
+    return "\n".join(lines)
 
 
 def _reusable_run(

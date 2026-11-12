@@ -90,6 +90,7 @@ def _result_from_dict(raw: dict[str, Any]) -> RunResult:
         dataset_sha256=raw.get("dataset_sha256"),
         base_url=raw.get("base_url"),
         params=raw.get("params") or {},
+        repeats=int(raw.get("repeats", 1)),
         price_source=raw.get("price_source"),
     )
 
