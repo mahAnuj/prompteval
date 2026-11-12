@@ -41,7 +41,15 @@ from typing import Any, Protocol
 
 from openai import OpenAI
 
-from prompteval.cost import CostBreakdown, ModelPricing, Usage, compute_cost, resolve_pricing
+from prompteval.cost import (
+    CostBreakdown,
+    ModelPricing,
+    UnknownModelError,
+    Usage,
+    compute_cost,
+    resolve_pricing,
+)
+from prompteval.eval.judge import JUDGE_CALLS
 from prompteval.eval.scorer import ScorerResult, is_scorer, scorer_params
 
 # ---------------------------------------------------------------------------
@@ -97,6 +105,10 @@ class ExampleResult:
     cost: CostBreakdown
     latency_s: float
     error: str | None = None
+    # What the LLM-judge calls cost while scoring this example (#15): kept
+    # apart from `cost`, which is the prompt under test. None = a judge model
+    # with no known price.
+    judge_cost: float | None = 0.0
 
 
 @dataclass(frozen=True)
@@ -122,6 +134,12 @@ class RunResult:
     @property
     def total_cost(self) -> float:
         return sum(e.cost.total_cost for e in self.examples if e.error is None)
+
+    @property
+    def total_judge_cost(self) -> float | None:
+        """Cost of the LLM-judge calls; None if any judge model had no price."""
+        costs = [e.judge_cost for e in self.examples]
+        return None if any(c is None for c in costs) else sum(c or 0.0 for c in costs)
 
     @property
     def avg_latency_s(self) -> float:
@@ -366,6 +384,7 @@ def run_eval(
         t0 = time.perf_counter()
         error: str | None = None
         output = ""
+        judge_cost: float | None = 0.0
         scores: list[ScoreOutcome] = []
         cost: CostBreakdown
         latency_s: float | None = None
@@ -380,7 +399,13 @@ def run_eval(
             summed = _sum_usages(runner_result.usages)
             cost = compute_cost(effective_model, summed, pricing)
 
-            scores = [_call_scorer(s, example, output) for s in eval_def.scorers]
+            judge_calls: list[tuple[str, int, int, int]] = []
+            token = JUDGE_CALLS.set(judge_calls)
+            try:
+                scores = [_call_scorer(s, example, output) for s in eval_def.scorers]
+            finally:
+                JUDGE_CALLS.reset(token)
+                judge_cost = _judge_cost(judge_calls, prices)
         except Exception as err:
             error = f"{type(err).__name__}: {err}"
             # A zero-cost breakdown so aggregations needn't special-case None.
@@ -398,6 +423,7 @@ def run_eval(
             cost=cost,
             latency_s=latency_s,
             error=error,
+            judge_cost=judge_cost,
         )
 
     # Several examples at once (#13); results stay in dataset order whatever
@@ -552,6 +578,23 @@ def _sum_usages(usages: list[Usage]) -> Usage:
         cached_tokens=sum(u.cached_tokens for u in usages),
         reasoning_tokens=sum(u.reasoning_tokens for u in usages),
     )
+
+
+def _judge_cost(
+    calls: list[tuple[str, int, int, int]], prices: Mapping[str, ModelPricing] | None
+) -> float | None:
+    """Price the judge calls made for one example; None if a judge model is unpriced."""
+    total = 0.0
+    for model, prompt_tokens, completion_tokens, cached in calls:
+        try:
+            pricing = resolve_pricing(model, prices)
+        except UnknownModelError:
+            return None
+        usage = Usage(
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, cached_tokens=cached
+        )
+        total += compute_cost(model, usage, pricing).total_cost
+    return total
 
 
 def _zero_cost(model: str) -> CostBreakdown:

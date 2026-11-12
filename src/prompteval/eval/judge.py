@@ -5,13 +5,12 @@ Always prefer a deterministic scorer if you can write one (exact_match, regex,
 JSON-schema-validates) — deterministic scorers are cheaper, faster, and free
 of judge noise.
 
-## Cost note (v0.1 limitation)
+## Cost
 
-Judge calls cost real money but are NOT aggregated into the eval's main cost
-report in v0.1 — they happen inside scorer functions, separate from the
-prompt-evaluation calls we're comparing. v0.2 will add judge-cost separation
-(report shows "prompt cost: $X, judge overhead: $Y"). For now, treat judge
-calls as eval-time overhead, not part of the v1 vs v2 comparison.
+Judge calls cost real money. Inside a run, each call's token usage is recorded
+(`JUDGE_CALLS`) and priced as that example's `judge_cost`, reported as its own
+line ("scoring overhead") and kept out of the prompt-vs-prompt cost verdict,
+which compares only the prompt under test (#15).
 
 ## Mocking in tests
 
@@ -22,7 +21,9 @@ hitting the API.
 
 from __future__ import annotations
 
+import contextlib
 import re
+from contextvars import ContextVar
 from typing import Any
 
 from openai import OpenAI
@@ -31,6 +32,14 @@ from openai import OpenAI
 # Lazy — only constructed when first needed so importing prompteval doesn't
 # require OPENAI_API_KEY in the environment.
 _DEFAULT_CLIENT: OpenAI | None = None
+
+#: Judge calls made while scoring one example: (model, prompt, completion,
+#: cached) tokens. The runner opens a fresh list around each example's scorers
+#: and prices it as that example's judge cost (#15); outside a run it is None
+#: and nothing is recorded.
+JUDGE_CALLS: ContextVar[list[tuple[str, int, int, int]] | None] = ContextVar(
+    "prompteval_judge_calls", default=None
+)
 
 
 class LLMJudgeError(ValueError):
@@ -73,8 +82,23 @@ def llm_judge(
             {"role": "user", "content": text},
         ],
     )
+    _record_usage(model, response)
     raw = response.choices[0].message.content or ""
     return _parse_score(raw)
+
+
+def _record_usage(model: str, response: Any) -> None:
+    calls = JUDGE_CALLS.get()
+    usage = getattr(response, "usage", None)
+    if calls is None or usage is None:
+        return
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+    # A response without usable token counts is simply not counted.
+    with contextlib.suppress(TypeError, ValueError):
+        calls.append(
+            (model, int(usage.prompt_tokens), int(usage.completion_tokens), int(cached or 0))
+        )
 
 
 def _get_default_client() -> OpenAI:

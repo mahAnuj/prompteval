@@ -74,6 +74,7 @@ def _result_from_dict(raw: dict[str, Any]) -> RunResult:
             cost=CostBreakdown(**e["cost"]),
             latency_s=e["latency_s"],
             error=e.get("error"),
+            judge_cost=e.get("judge_cost", 0.0),
         )
         for e in raw["examples"]
     ]

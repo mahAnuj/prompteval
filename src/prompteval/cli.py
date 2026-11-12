@@ -391,6 +391,11 @@ def run(
         click.echo(f"errors                      {n_err} of {len(result.examples)} examples failed")
     avg_cost = result.total_cost / max(1, len(result.examples))
     click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
+    judge = result.total_judge_cost
+    if judge is None:
+        click.echo("judge cost                  unpriced (a judge model has no known price)")
+    elif judge > 0:
+        click.echo(f"judge cost                  ${judge:.4f}  (scoring overhead, not the prompt)")
     click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
     click.echo(f"saved to: {saved_path}")
 
