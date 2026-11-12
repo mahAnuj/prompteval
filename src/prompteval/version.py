@@ -5,4 +5,4 @@ the rest of the package's imports — useful for build tooling and
 shells that want a cheap version check.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"

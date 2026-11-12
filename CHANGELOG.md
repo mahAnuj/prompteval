@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 2026-11-12
 
 - Competitor scan re-checked against current docs (2026-11-12); README
   positioning updated: Braintrust now shows cost deltas, so prompteval leads on

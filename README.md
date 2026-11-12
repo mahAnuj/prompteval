@@ -26,7 +26,7 @@ Other tools can show you that version B costs less and scores two points higher.
 [![PyPI downloads](https://img.shields.io/pypi/dm/prompteval-delta)](https://pypistats.org/packages/prompteval-delta)
 [![GitHub stars](https://img.shields.io/github/stars/mahAnuj/prompteval?style=flat)](https://github.com/mahAnuj/prompteval/stargazers)
 
-> **Alpha — v0.2.1, on PyPI as [`prompteval-delta`](https://pypi.org/project/prompteval-delta/).**
+> **Alpha — v0.2.2, on PyPI as [`prompteval-delta`](https://pypi.org/project/prompteval-delta/).**
 > **Do not `pip install prompteval`** — that name on PyPI belongs to an
 > unrelated project. The import and the command are still `prompteval`. The
 > public API may still change before 1.0. Stars and issues welcome.
@@ -359,7 +359,7 @@ Living source of truth lives in **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.m
 week-by-week status table, decisions log, explicit non-goals, and post-v1 roadmap.
 That file is updated the same commit any code ships; this README only summarises.
 
-**As of 12 Nov 2026 (v0.2.1).** `init`, `run`, `compare`, `sweep`, `noise`,
+**As of 12 Nov 2026 (v0.2.2).** `init`, `run`, `compare`, `sweep`, `noise`,
 `models` and `scorer` CLIs; a price catalog of ~3,900 models; any
 OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the

@@ -3,7 +3,7 @@
 # this one installs as prompteval-delta; the import and the CLI stay
 # `prompteval` (module-name below).
 name = "prompteval-delta"
-version = "0.2.1"
+version = "0.2.2"
 description = "LLM eval framework with first-class token-cost tracking. Did your prompt change save money without losing quality?"
 readme = "README.md"
 license = { text = "MIT" }
