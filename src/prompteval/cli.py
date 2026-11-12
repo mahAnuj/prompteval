@@ -35,13 +35,14 @@ from prompteval.cost import (
     ModelEndpoint,
     ModelPricing,
     UnknownModelError,
-    get_pricing,
     list_models,
     load_model_endpoints,
     load_price_file,
     parse_price_spec,
     resolve_pricing,
 )
+from prompteval.cost.catalog import fetch_catalog, load_catalog, save_catalog
+from prompteval.cost.catalog import search as catalog_search
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
 from prompteval.eval.runner import RunResult
@@ -134,15 +135,58 @@ def models_list(as_json: bool) -> None:
             f"cached ${m.cached_input_per_1m:>6.3f}/M  "
             f"output ${m.output_per_1m:>6.3f}/M"
         )
+    cat = load_catalog()
+    click.echo(
+        f"\n...plus {len(cat.models)} models in the price catalog (LiteLLM + OpenRouter, "
+        f"fetched {cat.fetched_at}). Find one: `prompteval models search <text>`. "
+        f"Refresh: `prompteval models update`."
+    )
+
+
+@models.command("search")
+@click.argument("text")
+@click.option("--provider", default=None, help="Only this provider, e.g. groq, together_ai.")
+@click.option("--limit", default=50, show_default=True)
+def models_search(text: str, provider: str | None, limit: int) -> None:
+    """Find models in the price catalog by name (thousands of models, many providers)."""
+    cat = load_catalog()
+    hits = catalog_search(text, provider=provider, limit=limit)
+    if not hits:
+        click.echo(f"No catalog model matches {text!r}.")
+        return
+    for key, (inp, cached, out, prov) in hits:
+        click.echo(
+            f"  {key:<60} {prov:<14} in ${inp:.3f}/M  cached ${cached:.3f}/M  out ${out:.3f}/M"
+        )
+    click.echo(f"\nCatalog: {len(cat.models)} models, fetched {cat.fetched_at} ({cat.origin}).")
+    click.echo(
+        "Use the part after the provider/ prefix as --model, with that provider's --base-url."
+    )
+
+
+@models.command("update")
+def models_update() -> None:
+    """Fetch current prices (LiteLLM's catalog + OpenRouter) into the local cache."""
+    try:
+        raw = fetch_catalog()
+    except Exception as err:  # network, HTTP or shape errors: keep the current catalog
+        raise click.ClickException(
+            f"Could not update prices ({err}); the current catalog is kept."
+        ) from err
+    path = save_catalog(raw)
+    click.echo(
+        f"Updated: {len(raw['models'])} models, fetched {raw['fetched_at']}, saved to {path}."
+    )
 
 
 @models.command("price")
 @click.argument("model")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON.")
-def models_price(model: str, as_json: bool) -> None:
-    """Show full pricing detail for a single model."""
+@click.option("--base-url", "base_url", default=None, help="The endpoint the model is called at.")
+def models_price(model: str, as_json: bool, base_url: str | None) -> None:
+    """Show the price prompteval would use for a model (catalog or built-in)."""
     try:
-        pricing = get_pricing(model)
+        pricing = resolve_pricing(model, None, base_url)
     except UnknownModelError as err:
         raise click.ClickException(str(err)) from err
 
@@ -150,7 +194,11 @@ def models_price(model: str, as_json: bool) -> None:
         click.echo(json.dumps(asdict(pricing), indent=2))
         return
 
-    cache_discount_pct = (1 - pricing.cached_input_per_1m / pricing.input_per_1m) * 100
+    cache_discount_pct = (
+        (1 - pricing.cached_input_per_1m / pricing.input_per_1m) * 100
+        if pricing.input_per_1m
+        else 0.0
+    )
     click.echo(f"Model:         {pricing.name}")
     click.echo(f"Input:         ${pricing.input_per_1m:>7.3f} per 1M tokens")
     click.echo(
@@ -158,7 +206,7 @@ def models_price(model: str, as_json: bool) -> None:
         f"({cache_discount_pct:.0f}% off uncached)"
     )
     click.echo(f"Output:        ${pricing.output_per_1m:>7.3f} per 1M tokens")
-    click.echo(f"Verified on:   {pricing.pricing_updated_at}")
+    click.echo(f"Price as of:   {pricing.pricing_updated_at}")
     if pricing.notes:
         click.echo(f"Notes:         {pricing.notes}")
 
@@ -439,7 +487,7 @@ def sweep(
     # Check every model can be priced before spending anything.
     for m in model_list:
         try:
-            resolve_pricing(m, prices)
+            resolve_pricing(m, prices, endpoints.get(m, ModelEndpoint()).base_url)
         except UnknownModelError as err:
             raise click.ClickException(str(err)) from err
 

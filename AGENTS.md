@@ -8,7 +8,7 @@ The project uses [uv](https://docs.astral.sh/uv/). Every command runs through it
 
 ```bash
 uv sync --all-extras --dev   # install deps (creates .venv)
-uv run pytest                # 264 tests, no network or API key needed
+uv run pytest                # 284 tests, no network or API key needed
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting gate (drop --check to fix)
 uv run mypy src tests        # strict mode, must stay clean
@@ -47,6 +47,12 @@ commands: `init`, `models`, `run`, `compare`, `sweep`, `scorer`.
 - **`cost/pricing.yaml`** — per-model token prices (5 models: gpt-4o,
   gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano). **This is the file to edit
   when prices change or a model is added** — nothing else hardcodes pricing.
+  **`cost/catalog.py` + `cost/catalog.json`** — ~3,900 models from LiteLLM's
+  price list (MIT) and OpenRouter, matched to the provider by `base_url`.
+  Refresh the bundled snapshot before a release with
+  `prompteval models update` and copy `~/.cache/prompteval/catalog.json` over
+  `src/prompteval/cost/catalog.json` (tests never fetch). Lookup order:
+  user prices, catalog, then `pricing.yaml`.
   Users price any other model themselves (`--price`, or a `prices.yaml` next to
   their `eval.py`, read by `load_price_file`); `resolve_pricing` checks theirs
   first. Only add a built-in price with its source and date.
@@ -66,7 +72,7 @@ commands: `init`, `models`, `run`, `compare`, `sweep`, `scorer`.
   both ruff and mypy on purpose: the templates reference public API that does
   not exist yet, so linting them produces false positives. Do not "fix" the
   templates to satisfy the linters, and do not remove the excludes.
-- **Tests must not need network or an API key.** All 264 pass offline; keep new
+- **Tests must not need network or an API key.** All 284 pass offline; keep new
   tests that way by stubbing the model client rather than calling out.
 - **Cost and quality are reported together.** A change that reports one without
   the other defeats the point of the tool.

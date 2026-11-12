@@ -154,18 +154,27 @@ def get_pricing(model_name: str) -> ModelPricing:
     available = ", ".join(sorted(PRICING))
     raise UnknownModelError(
         f"Unknown model: {model_name!r}.{suggestion} Available: {available}. "
-        f"For any other model (Groq, Together, OpenRouter, Ollama, a newer OpenAI model), "
-        f"give its price: --price input=X,output=Y (USD per 1M tokens), or add it to "
+        f"It is not in the price catalog either: find the catalog's name for it with "
+        f"`prompteval models search <text>`, refresh prices with `prompteval models update`, "
+        f"or give its price: --price input=X,output=Y (USD per 1M tokens), or add it to "
         f"prices.yaml next to eval.py."
     )
 
 
 def resolve_pricing(
-    model_name: str, custom: Mapping[str, ModelPricing] | None = None
+    model_name: str,
+    custom: Mapping[str, ModelPricing] | None = None,
+    base_url: str | None = None,
 ) -> ModelPricing:
-    """User-supplied prices first, then the built-in table (#8)."""
+    """User-supplied prices, then the price catalog (thousands of models, matched
+    to the provider at `base_url`), then the hand-kept table."""
     if custom and model_name in custom:
         return custom[model_name]
+    from prompteval.cost.catalog import catalog_pricing  # catalog imports this module
+
+    found = catalog_pricing(model_name, base_url)
+    if found is not None:
+        return found
     return get_pricing(model_name)
 
 

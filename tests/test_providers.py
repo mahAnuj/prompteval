@@ -67,9 +67,15 @@ def test_load_price_file_rejects_bad_files(tmp_path: Path, body: str) -> None:
 def test_user_prices_win_and_unknown_models_explain_how_to_price_them() -> None:
     custom = {"gpt-4o": parse_price_spec("gpt-4o", "input=1,output=1")}
     assert resolve_pricing("gpt-4o", custom).input_per_1m == 1
-    assert resolve_pricing("gpt-4o-mini", custom) == get_pricing("gpt-4o-mini")
+    catalog_price = resolve_pricing("gpt-4o-mini", custom)
+    builtin = get_pricing("gpt-4o-mini")
+    assert (catalog_price.input_per_1m, catalog_price.output_per_1m) == (
+        builtin.input_per_1m,
+        builtin.output_per_1m,
+    )
+    assert (catalog_price.notes or "").startswith("catalog")
     with pytest.raises(UnknownModelError, match="--price input=X,output=Y"):
-        resolve_pricing(GROQ, custom)
+        resolve_pricing("no-such-model-anywhere", custom)
 
 
 def test_compute_cost_uses_given_pricing() -> None:

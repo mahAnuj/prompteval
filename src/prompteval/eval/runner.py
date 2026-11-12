@@ -326,8 +326,8 @@ def run_eval(
     prompt_text = Path(prompt_path).read_text()
     effective_model = model or eval_def.model
     # Fail before the first (paid) call when the model can't be priced (#5).
-    pricing = resolve_pricing(effective_model, prices)
     effective_base_url = base_url or eval_def.base_url
+    pricing = resolve_pricing(effective_model, prices, effective_base_url)
     examples = _load_dataset(Path(eval_def.dataset))
     effective_params = {**eval_def.params, **(params or {})}
     runner: Runner = eval_def.runner or functools.partial(default_runner, params=effective_params)
@@ -399,6 +399,8 @@ def run_eval(
         price_source=(
             f"user-supplied ({pricing.notes or 'custom'})"
             if prices and effective_model in prices
+            else pricing.notes
+            if (pricing.notes or "").startswith("catalog")
             else f"built-in ({pricing.pricing_updated_at})"
         ),
     )

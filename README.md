@@ -182,10 +182,27 @@ adding scorers doesn't add false alarms.
 
 ### Any model, any OpenAI-compatible provider
 
-The built-in price table covers five OpenAI models (`prompteval models list`).
-Anything else that speaks the OpenAI API (Groq, Together, OpenRouter,
-Fireworks, a local Ollama or vLLM, or a newer OpenAI model) runs too, once you
-give its price:
+**Prices come from a catalog of ~3,900 models**, merged from two maintained
+public sources: [LiteLLM's model price list](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+(MIT) and [OpenRouter's model list](https://openrouter.ai/api/v1/models). It
+covers OpenAI, Anthropic, Gemini, Mistral, DeepSeek, xAI, Together, Fireworks,
+DeepInfra, Cerebras, OpenRouter and more. A dated snapshot ships with each
+release; refresh it whenever you like:
+
+```bash
+prompteval models update          # fetch current prices into ~/.cache/prompteval
+prompteval models search llama    # find a model's name and price
+prompteval models price claude-sonnet-4-5
+```
+
+The price follows the endpoint: the same open model costs different amounts on
+Groq, Together and OpenRouter, so `--base-url` decides which provider's entry
+applies. Every run records the catalog entry and the date its price was
+fetched. Prices are what those sources publish; check the provider's own page
+before quoting a number.
+
+Anything that speaks the OpenAI API (Groq, Together, OpenRouter, Fireworks, a
+local Ollama or vLLM) runs. If a model isn't in the catalog, give its price:
 
 ```bash
 # Groq
@@ -263,7 +280,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **264/264 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **284/284 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API
