@@ -8,7 +8,7 @@ The project uses [uv](https://docs.astral.sh/uv/). Every command runs through it
 
 ```bash
 uv sync --all-extras --dev   # install deps (creates .venv)
-uv run pytest                # 256 tests, no network or API key needed
+uv run pytest                # 264 tests, no network or API key needed
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting gate (drop --check to fix)
 uv run mypy src tests        # strict mode, must stay clean
@@ -31,8 +31,8 @@ than adding ignores.
 
 A CLI that runs an eval suite against a prompt, scores the output, and reports
 quality *and* token cost side by side — so a prompt change can be judged on
-both at once. Entry point is `src/prompteval/cli.py` (Click), exposing five
-commands: `init`, `models`, `run`, `compare`, `scorer`.
+both at once. Entry point is `src/prompteval/cli.py` (Click), exposing six
+commands: `init`, `models`, `run`, `compare`, `sweep`, `scorer`.
 
 - **`cli.py`** — argument parsing and output formatting only. Business logic
   lives in the packages below; keep it that way.
@@ -53,6 +53,8 @@ commands: `init`, `models`, `run`, `compare`, `scorer`.
 - **`cost/compute.py`** + **`cost/models.py`** — turn token usage into cost using
   that table.
 - **`compare/core.py`** — the paired delta report between two persisted runs.
+- **`compare/sweep.py`** — `sweep`: one prompt on several models, each compared
+  to a baseline, with a one-line answer.
 - **`compare/gates.py`** — pass/fail thresholds, which is what makes the tool
   usable in CI.
 - **`init/bootstrap.py`** + **`init/templates/`** — `prompteval init` scaffolds an
@@ -64,7 +66,7 @@ commands: `init`, `models`, `run`, `compare`, `scorer`.
   both ruff and mypy on purpose: the templates reference public API that does
   not exist yet, so linting them produces false positives. Do not "fix" the
   templates to satisfy the linters, and do not remove the excludes.
-- **Tests must not need network or an API key.** All 256 pass offline; keep new
+- **Tests must not need network or an API key.** All 264 pass offline; keep new
   tests that way by stubbing the model client rather than calling out.
 - **Cost and quality are reported together.** A change that reports one without
   the other defeats the point of the tool.

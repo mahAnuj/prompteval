@@ -12,10 +12,12 @@ Public surface:
 from prompteval.cost.compute import CostBreakdown, Usage, compute_cost
 from prompteval.cost.models import (
     PRICING,
+    ModelEndpoint,
     ModelPricing,
     UnknownModelError,
     get_pricing,
     list_models,
+    load_model_endpoints,
     load_price_file,
     parse_price_spec,
     resolve_pricing,
@@ -24,12 +26,14 @@ from prompteval.cost.models import (
 __all__ = [
     "PRICING",
     "CostBreakdown",
+    "ModelEndpoint",
     "ModelPricing",
     "UnknownModelError",
     "Usage",
     "compute_cost",
     "get_pricing",
     "list_models",
+    "load_model_endpoints",
     "load_price_file",
     "parse_price_spec",
     "resolve_pricing",

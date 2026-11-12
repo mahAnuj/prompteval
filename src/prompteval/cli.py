@@ -6,6 +6,7 @@ Surface today: `--version`, `hello`, `init`, `models`, `scorer`, `run`,
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
 import json
@@ -24,16 +25,26 @@ from prompteval.compare import (
     render_text,
 )
 from prompteval.compare.gates import GateSpecError
+from prompteval.compare.sweep import (
+    compute_sweep,
+    render_sweep_html,
+    render_sweep_markdown,
+    render_sweep_text,
+)
 from prompteval.cost import (
+    ModelEndpoint,
     ModelPricing,
     UnknownModelError,
     get_pricing,
     list_models,
+    load_model_endpoints,
     load_price_file,
     parse_price_spec,
+    resolve_pricing,
 )
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
+from prompteval.eval.runner import RunResult
 from prompteval.eval.scorer import is_scorer
 from prompteval.init import bootstrap
 from prompteval.version import __version__
@@ -287,15 +298,13 @@ def run(
         marker = "✗" if error else "✓"
         click.echo(f"  [{i}/{n}] {ex_id:<24} {marker} {latency:0.2f}s")
 
-    prices: dict[str, ModelPricing] = {}
-    candidate_file = prices_file or eval_file.parent / "prices.yaml"
+    prices, endpoints = _user_prices(eval_file, prices_file)
     try:
-        if candidate_file.exists():
-            prices.update(load_price_file(candidate_file))
         if price_spec:
             prices[model] = parse_price_spec(model, price_spec)
     except ValueError as err:
         raise click.ClickException(str(err)) from err
+    endpoint = endpoints.get(model, ModelEndpoint())
 
     try:
         result = run_eval(
@@ -305,8 +314,8 @@ def run(
             model=model_override,
             progress=progress,
             prices=prices,
-            base_url=base_url,
-            api_key_env=api_key_env,
+            base_url=base_url or endpoint.base_url,
+            api_key_env=api_key_env or endpoint.api_key_env,
             params=_parse_params(param_specs),
         )
     except (UnknownModelError, ValueError) as err:
@@ -326,6 +335,169 @@ def run(
     click.echo(f"total cost                  ${result.total_cost:.4f}  (avg ${avg_cost:.4f}/call)")
     click.echo(f"avg latency                 {result.avg_latency_s:.2f}s")
     click.echo(f"saved to: {saved_path}")
+
+
+def _user_prices(
+    eval_file: Path, prices_file: Path | None
+) -> tuple[dict[str, ModelPricing], dict[str, ModelEndpoint]]:
+    """The user's prices.yaml (given, or next to the eval file): prices and endpoints."""
+    candidate = prices_file or eval_file.parent / "prices.yaml"
+    if not candidate.exists():
+        return {}, {}
+    try:
+        return load_price_file(candidate), load_model_endpoints(candidate)
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+
+
+@main.command()
+@click.option(
+    "--prompt",
+    "prompt_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The prompt to run on every model.",
+)
+@click.option(
+    "--models",
+    required=True,
+    help="Comma-separated models, e.g. gpt-4o,gpt-4o-mini,llama-3.3-70b-versatile.",
+)
+@click.option(
+    "--baseline",
+    default=None,
+    help="The model the others are compared to (default: the first in --models).",
+)
+@click.option(
+    "--eval-file",
+    "eval_file",
+    default="evals/eval.py",
+    show_default=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--prices-file",
+    "prices_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="prices.yaml with prices (and optional base_url / api_key_env) per model.",
+)
+@click.option("--param", "param_specs", multiple=True, help="Request setting, as in `run`.")
+@click.option(
+    "--margin",
+    type=click.FloatRange(0.0, 1.0, max_open=True),
+    default=0.05,
+    show_default=True,
+    help="Largest scorer drop (0-1 scale) still counted as 'quality holds'.",
+)
+@click.option("--rerun", is_flag=True, help="Run every model again instead of reusing saved runs.")
+@click.option(
+    "--html",
+    "html_path",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write the table as a single HTML file.",
+)
+@click.option(
+    "--markdown",
+    "markdown_path",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write the table as Markdown (for a PR comment or a README).",
+)
+def sweep(
+    prompt_path: Path,
+    models: str,
+    baseline: str | None,
+    eval_file: Path,
+    prices_file: Path | None,
+    param_specs: tuple[str, ...],
+    margin: float,
+    rerun: bool,
+    html_path: Path | None,
+    markdown_path: Path | None,
+) -> None:
+    """Which model is cheapest for this prompt without losing quality?
+
+    Runs the prompt on every model (reusing a saved run when the prompt, dataset,
+    model and settings are unchanged, so re-running is free), compares each to the
+    baseline, and prints one table with a one-line answer.
+    """
+    model_list = [m.strip() for m in models.split(",") if m.strip()]
+    if len(model_list) < 2 or len(set(model_list)) != len(model_list):
+        raise click.ClickException("--models needs at least two different models.")
+    base = baseline or model_list[0]
+    if base not in model_list:
+        raise click.ClickException(f"--baseline {base!r} is not in --models.")
+
+    eval_def = _discover_eval(eval_file)
+    prices, endpoints = _user_prices(eval_file, prices_file)
+    params = {**eval_def.params, **_parse_params(param_specs)}
+    prompt_text = prompt_path.read_text()
+    dataset_sha = hashlib.sha256(Path(eval_def.dataset).read_bytes()).hexdigest()
+
+    # Check every model can be priced before spending anything.
+    for m in model_list:
+        try:
+            resolve_pricing(m, prices)
+        except UnknownModelError as err:
+            raise click.ClickException(str(err)) from err
+
+    runs: dict[str, RunResult] = {}
+    for m in model_list:
+        tag = f"sweep-{prompt_path.stem}-{m}"
+        saved = _reusable_run(tag, prompt_text, dataset_sha, m, params) if not rerun else None
+        if saved is not None:
+            click.echo(f"{m}: reusing saved run ({tag})")
+            runs[m] = saved
+            continue
+        endpoint = endpoints.get(m, ModelEndpoint())
+        click.echo(f"{m}: running {_count_examples(Path(eval_def.dataset))} examples...")
+        try:
+            result = run_eval(
+                eval_def,
+                prompt_path=prompt_path,
+                tag=tag,
+                model=m,
+                prices=prices,
+                base_url=endpoint.base_url,
+                api_key_env=endpoint.api_key_env,
+                params=params,
+            )
+        except (UnknownModelError, ValueError) as err:
+            raise click.ClickException(f"{m}: {err}") from err
+        save_run(result)
+        runs[m] = result
+
+    try:
+        report = compute_sweep(runs, base, margin=margin)
+    except ValueError as err:
+        raise click.ClickException(str(err)) from err
+    click.echo("")
+    click.echo(render_sweep_text(report))
+    if html_path is not None:
+        html_path.write_text(render_sweep_html(report), encoding="utf-8")
+        click.echo(f"HTML report: {html_path}")
+    if markdown_path is not None:
+        markdown_path.write_text(render_sweep_markdown(report), encoding="utf-8")
+        click.echo(f"Markdown report: {markdown_path}")
+
+
+def _reusable_run(
+    tag: str, prompt_text: str, dataset_sha: str, model: str, params: dict[str, Any]
+) -> RunResult | None:
+    """A saved run made with exactly this prompt, dataset, model and settings."""
+    try:
+        saved = load_run(tag)
+    except FileNotFoundError:
+        return None
+    same = (
+        saved.prompt_text == prompt_text
+        and saved.dataset_sha256 == dataset_sha
+        and saved.model == model
+        and saved.params == params
+    )
+    return saved if same else None
 
 
 def _parse_params(specs: tuple[str, ...]) -> dict[str, Any]:

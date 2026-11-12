@@ -213,6 +213,23 @@ models:
 supply are recorded with the run, so a report always says where its costs came
 from. An unknown model with no price fails before any request is made.
 
+### Which model is cheapest for this prompt?
+
+```bash
+prompteval sweep --prompt prompts/v1.txt --models gpt-4o,gpt-4o-mini,gpt-4.1-nano --markdown sweep.md
+```
+
+Runs the prompt on every model, compares each to the first (or `--baseline`)
+with the same rules as `compare`, corrected for the number of models, and
+prints one table ending in a one-line answer such as *"Cheapest model that
+holds quality: gpt-4o-mini (−94% cost vs gpt-4o)"*. When nothing is proven,
+it says so rather than guessing.
+
+- Mix providers: give a model a `base_url` and `api_key_env` in `prices.yaml`.
+- Re-running is free: a saved run with the same prompt, dataset, model and
+  settings is reused (`--rerun` to force). Add examples and sweep again.
+- `--markdown` and `--html` write the table for a PR, an issue or a post.
+
 ### 8. (Optional but the moat) Lock it into CI
 
 A copy-and-paste GitHub Actions workflow lives at [`examples/github-actions/prompteval.yml`](examples/github-actions/prompteval.yml). The core of it:
@@ -246,7 +263,7 @@ That file is updated the same commit any code ships; this README only summarises
 comparison has shipped and is tested: `init`, `run`, `compare`, `models` and
 `scorer` CLIs; the cost model; 9 stock scorers plus `llm_judge`; paired deltas
 with bootstrap CIs and significance; plain-English verdicts; the HTML report;
-and the `--fail-on` CI gate with a GitHub Actions template. **256/256 tests
+and the `--fail-on` CI gate with a GitHub Actions template. **264/264 tests
 green.**
 
 **What is left is packaging, not capability:** a scorer-writing guide, an API

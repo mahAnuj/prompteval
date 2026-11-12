@@ -444,7 +444,11 @@ def _metric_label(d: MetricDelta, lower_is_better: bool) -> str:
 
 
 def compute_comparison(
-    run_a: RunResult, run_b: RunResult, *, margin: float = DEFAULT_MARGIN
+    run_a: RunResult,
+    run_b: RunResult,
+    *,
+    margin: float = DEFAULT_MARGIN,
+    family_size: int = 1,
 ) -> ComparisonReport:
     """Pair two runs by example id and produce a ComparisonReport.
 
@@ -481,7 +485,9 @@ def compute_comparison(
     common_scorer_names = _common_scorer_names(run_a, run_b)
     # Bonferroni across the quality metrics, so more scorers ≠ more false alarms (#4).
     k = len(common_scorer_names) + (1 if any_errors else 0)
-    decision_level = 1 - ALPHA / max(1, k)
+    # `family_size` > 1 when this is one of several comparisons made together
+    # (a model sweep), so the family-wise error stays at ALPHA across all of them.
+    decision_level = 1 - ALPHA / (max(1, k) * max(1, family_size))
 
     scorer_deltas: list[MetricDelta] = []
     for s_name in common_scorer_names:

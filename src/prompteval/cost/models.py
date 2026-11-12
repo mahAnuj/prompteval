@@ -205,6 +205,40 @@ def parse_price_spec(model_name: str, spec: str) -> ModelPricing:
     )
 
 
+@dataclass(frozen=True)
+class ModelEndpoint:
+    """Where a model lives, from a user prices.yaml (`base_url`, `api_key_env`)."""
+
+    base_url: str | None = None
+    api_key_env: str | None = None
+
+
+def load_model_endpoints(path: str | Path) -> dict[str, ModelEndpoint]:
+    """Per-model endpoints from a prices.yaml, for models that declare one:
+
+    models:
+      - name: llama-3.3-70b-versatile
+        input_per_1m: 0.59
+        output_per_1m: 0.79
+        base_url: https://api.groq.com/openai/v1
+        api_key_env: GROQ_API_KEY
+    """
+    raw = yaml.safe_load(Path(path).read_text()) or {}
+    entries = raw.get("models") if isinstance(raw, dict) else None
+    out: dict[str, ModelEndpoint] = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if (
+            isinstance(entry, dict)
+            and "name" in entry
+            and (entry.get("base_url") or entry.get("api_key_env"))
+        ):
+            out[str(entry["name"])] = ModelEndpoint(
+                base_url=str(entry["base_url"]) if entry.get("base_url") else None,
+                api_key_env=str(entry["api_key_env"]) if entry.get("api_key_env") else None,
+            )
+    return out
+
+
 def load_price_file(path: str | Path) -> dict[str, ModelPricing]:
     """Read a user `prices.yaml`:
 
