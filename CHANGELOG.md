@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `.env` and `evals/.env` are now read at startup, as `prompteval init` always
+  said to do; nothing loaded them before, so a key placed there gave an
+  authentication error. A variable set in the shell or CI still wins.
+- README: whose API keys are used, and which commands call models.
+
 ## 0.2.0 — 2026-11-12
 
 ### Verdicts you can trust (breaking changes in behaviour)

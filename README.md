@@ -50,6 +50,21 @@ requests: `run`, `sweep` and `noise` send each example to the model (times
 saved runs and local prices. Re-running an unchanged `sweep` reuses saved runs,
 and the GitHub Action makes no calls when the prompt didn't change.
 
+**Whose API keys?** Yours. prompteval has no hosted service and no key of
+its own: it calls each provider directly with your key, so the provider bills
+your account and nobody else sees the requests.
+
+- **OpenAI** (the default): `OPENAI_API_KEY`.
+- **Any other provider**: put its key in an environment variable and name it
+  with `--api-key-env GROQ_API_KEY` (or `api_key_env:` in `prices.yaml`). A
+  local Ollama server needs none. A sweep across providers needs one key per
+  provider.
+- **`llm_judge`** uses `OPENAI_API_KEY` by default; to judge with another
+  provider, pass it a client: `llm_judge(..., client=OpenAI(base_url=..., api_key=...))`.
+- Keys can live in a `.env` file (or `evals/.env`, where `init` puts the
+  example), read automatically. A variable already set in your shell, or a CI
+  secret, always wins.
+
 **Closest neighbors:** pytest, [Braintrust Experiments](https://braintrust.dev/), [promptfoo](https://promptfoo.dev/), [Inspect AI](https://inspect.aisi.org.uk/).
 
 **Not what we do:** [Helicone](https://helicone.ai/), [Portkey](https://portkey.ai/), [LiteLLM](https://github.com/BerriAI/litellm), [LangChain](https://langchain.com/).
@@ -333,7 +348,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**292/292 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**295/295 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

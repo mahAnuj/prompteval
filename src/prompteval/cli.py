@@ -46,6 +46,7 @@ from prompteval.cost import (
 )
 from prompteval.cost.catalog import fetch_catalog, load_catalog, save_catalog
 from prompteval.cost.catalog import search as catalog_search
+from prompteval.dotenv import load_env_files
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
 from prompteval.eval.runner import RunResult
@@ -58,6 +59,8 @@ from prompteval.version import __version__
 @click.version_option(version=__version__, prog_name="prompteval")
 def main() -> None:
     """Entry point for the `prompteval` console script."""
+    # API keys from .env / evals/.env, as `init` instructs; the shell wins.
+    load_env_files()
 
 
 @main.command()
@@ -103,7 +106,7 @@ def init(directory: str, force: bool) -> None:
     click.echo("  $EDITOR prompts/v1.txt        # paste your current prompt")
     click.echo("  $EDITOR prompts/v2.txt        # paste the variant to test")
     click.echo("  $EDITOR dataset.jsonl         # add your own examples")
-    click.echo("  cp .env.example .env && $EDITOR .env   # add OPENAI_API_KEY")
+    click.echo("  cp .env.example .env && $EDITOR .env   # add your API key (read automatically)")
     click.echo("")
     click.echo("Then (once v0.1 ships — see IMPLEMENTATION_PLAN.md):")
     click.echo("  prompteval run --prompt prompts/v1.txt --tag baseline")
