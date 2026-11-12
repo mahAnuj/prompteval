@@ -470,7 +470,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mahAnuj/prompteval@v0.2.1
+      - uses: mahAnuj/prompteval@v0.3.0
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
@@ -478,7 +478,7 @@ jobs:
           fail-on: cost+10%,quality-5%
 ```
 
-Pin a release tag (`@v0.2.1`, or whatever is newest on the releases page);
+Pin a release tag (`@v0.3.0`, or whatever is newest on the releases page);
 bump it when you want a newer version.
 
 It runs the PR base's version of the prompt and the head version on the same
