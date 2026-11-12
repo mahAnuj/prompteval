@@ -53,6 +53,13 @@ from prompteval.cost import (
 )
 from prompteval.cost.catalog import fetch_catalog, load_catalog, save_catalog
 from prompteval.cost.catalog import search as catalog_search
+from prompteval.dataset_import import (
+    REDACTORS,
+    build_examples,
+    parse_maps,
+    read_rows,
+    write_dataset,
+)
 from prompteval.dotenv import load_env_files
 from prompteval.eval import Eval, load_run, run_eval, save_run
 from prompteval.eval import stock as stock_scorers
@@ -119,6 +126,85 @@ def init(directory: str, force: bool) -> None:
     click.echo("  prompteval run --prompt prompts/v1.txt --tag baseline")
     click.echo("  prompteval run --prompt prompts/v2.txt --tag short-prompt")
     click.echo("  prompteval compare baseline short-prompt")
+
+
+@main.group()
+def dataset() -> None:
+    """Build dataset.jsonl from real inputs."""
+
+
+@dataset.command("import")
+@click.argument("source_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--input-column", required=True, help="Column holding what the user sent.")
+@click.option(
+    "--id-column", default=None, help="Column to use as the example id (default: row number)."
+)
+@click.option(
+    "--map",
+    "map_specs",
+    multiple=True,
+    help="Carry a column across: column=expected.key or column=vars.name (repeatable).",
+)
+@click.option(
+    "--sample", type=click.IntRange(1), default=None, help="Keep this many rows, sampled at random."
+)
+@click.option(
+    "--seed", type=int, default=1, show_default=True, help="Sampling seed (same seed, same rows)."
+)
+@click.option(
+    "--redact",
+    "redact_spec",
+    default="",
+    help="Mask before writing: emails, phones, or emails,phones.",
+)
+@click.option(
+    "--out",
+    "out_path",
+    default="evals/dataset.jsonl",
+    show_default=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+)
+@click.option("--force", is_flag=True, help="Replace the output file if it exists.")
+def dataset_import(
+    source_file: Path,
+    input_column: str,
+    id_column: str | None,
+    map_specs: tuple[str, ...],
+    sample: int | None,
+    seed: int,
+    redact_spec: str,
+    out_path: Path,
+    force: bool,
+) -> None:
+    """Turn a CSV or JSONL export of real inputs into dataset.jsonl.
+
+    Nothing is sent anywhere: rows are read, de-duplicated, sampled and
+    (with --redact) masked locally, and marked "source": "real".
+    """
+    kinds = tuple(k.strip() for k in redact_spec.split(",") if k.strip())
+    unknown = [k for k in kinds if k not in REDACTORS]
+    if unknown:
+        raise click.ClickException(f"Unknown --redact {unknown[0]!r}: use emails and/or phones.")
+    try:
+        rows = read_rows(source_file)
+        examples, stats = build_examples(
+            rows,
+            input_column=input_column,
+            id_column=id_column,
+            maps=parse_maps(map_specs),
+            sample=sample,
+            seed=seed,
+            redact_kinds=kinds,
+        )
+        write_dataset(examples, out_path, force=force)
+    except (ValueError, FileExistsError, json.JSONDecodeError) as err:
+        raise click.ClickException(str(err)) from err
+    click.echo(
+        f"Read {stats.read} rows; dropped {stats.duplicates} duplicates and {stats.empty} empty; "
+        f"wrote {stats.written} real examples to {out_path}."
+    )
+    if kinds:
+        click.echo(f"Masked: {', '.join(kinds)}. Check a few rows before sharing the file.")
 
 
 @main.group()

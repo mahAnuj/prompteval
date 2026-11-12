@@ -75,6 +75,7 @@ def _result_from_dict(raw: dict[str, Any]) -> RunResult:
             latency_s=e["latency_s"],
             error=e.get("error"),
             judge_cost=e.get("judge_cost", 0.0),
+            source=e.get("source"),
         )
         for e in raw["examples"]
     ]

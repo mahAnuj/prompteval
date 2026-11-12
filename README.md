@@ -121,6 +121,18 @@ Paste prompts into `prompts/v1.txt` and `prompts/v2.txt`. Add 10–30 examples t
 
 The `expected` field is whatever your scorers want — there's no fixed schema.
 
+**Have real traffic?** Real inputs beat invented ones. Turn a CSV or JSONL
+export of logs into the dataset, locally, with personal data masked:
+
+```bash
+prompteval dataset import support-export.csv --input-column message \
+  --map team=vars.team --sample 40 --redact emails,phones
+```
+
+Duplicates are dropped, the sample is reproducible (`--seed`), nothing is sent
+anywhere, and each row is marked as real, so reports can say how many examples
+are synthetic.
+
 **Prompts with variables.** If your prompt is a template, write it as one:
 `Summarise this ticket for {customer}: {input}`. Each `{name}` is filled from
 the example's `input` and an optional `vars` object, and the filled prompt is
@@ -382,7 +394,7 @@ OpenAI-compatible provider; paired deltas with bootstrap CIs; verdicts decided
 by non-inferiority against a margin; CI gates on the worst plausible case; the
 error rate as a quality metric; judge cost reported on its own line; HTML and
 Markdown reports; and a GitHub Action that comments on pull requests.
-**312/312 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
+**318/318 tests green.** What changed is in [CHANGELOG.md](CHANGELOG.md).
 
 Still alpha: treat the public API as movable until 1.0.
 

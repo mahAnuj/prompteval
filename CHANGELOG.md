@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `prompteval dataset import`: build dataset.jsonl from a CSV or JSONL export of
+  real inputs, with column mapping, de-duplication, reproducible sampling and
+  e-mail/phone masking, all local. Rows are marked `"source": "real"`, and
+  `compare` warns when examples are synthetic (#21).
 - `compare --pairwise` / `sweep --pairwise`: a judge model compares the runs'
   answers directly, no scorers needed. Each example is judged in both orders;
   disagreement counts as a tie. Win/tie/loss feeds the usual statistics and

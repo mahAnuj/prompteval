@@ -67,6 +67,9 @@ class Example:
     expected: dict[str, Any] = field(default_factory=dict)
     # Values for `{name}` placeholders in the prompt, besides `{input}` (#10).
     vars: dict[str, Any] = field(default_factory=dict)
+    # "real" (imported from logs, #21) or "synthetic" (drafted by AI, #20);
+    # None when the dataset doesn't say. Reports count synthetic examples.
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,8 @@ class ExampleResult:
     # apart from `cost`, which is the prompt under test. None = a judge model
     # with no known price.
     judge_cost: float | None = 0.0
+    # Copied from the dataset row ("real" / "synthetic" / None), see Example.
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -456,6 +461,7 @@ def run_eval(
             latency_s=latency_s,
             error=error,
             judge_cost=judge_cost,
+            source=example.source,
         )
 
     # Several examples at once (#13); results stay in dataset order whatever
@@ -591,6 +597,7 @@ def _load_dataset(path: Path) -> list[Example]:
                     input=str(obj["input"]),
                     expected=obj.get("expected", {}) or {},
                     vars=obj.get("vars", {}) or {},
+                    source=str(obj["source"]) if obj.get("source") else None,
                 )
             )
     if not examples:

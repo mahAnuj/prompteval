@@ -618,6 +618,13 @@ def _compatibility_warnings(run_a: RunResult, run_b: RunResult) -> tuple[str, ..
             f"{only_a} example(s) only in {run_a.tag!r} and {only_b} only in {run_b.tag!r} "
             "were left out"
         )
+    synthetic = sum(1 for e in run_b.examples if e.source == "synthetic")
+    if synthetic:
+        out.append(
+            f"{synthetic} of {len(run_b.examples)} examples are synthetic (drafted by AI): "
+            "tidier than real traffic, so treat the result as a first signal; "
+            "`prompteval dataset import` brings in real inputs"
+        )
     if run_a.repeats != run_b.repeats:
         out.append(
             f"the runs answered each example a different number of times "
