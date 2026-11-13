@@ -31,6 +31,12 @@ Other tools can show you that version B costs less and scores two points higher.
 > unrelated project. The import and the command are still `prompteval`. The
 > public API may still change before 1.0. Stars and issues welcome.
 
+**Guide and write-ups:** [product guide](https://anujmahajan.com/products/prompteval) ·
+[Is the cheaper model good enough?](https://anujmahajan.com/blog/is-the-cheaper-model-good-enough)
+(a worked comparison) ·
+[Let an LLM draft your eval](https://anujmahajan.com/blog/let-an-llm-draft-your-eval)
+(drafting the test set and criteria with an LLM).
+
 ---
 
 ## What prompteval is, and is not

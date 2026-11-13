@@ -44,6 +44,8 @@ dependencies = [
 Homepage = "https://github.com/mahAnuj/prompteval"
 Repository = "https://github.com/mahAnuj/prompteval"
 Issues = "https://github.com/mahAnuj/prompteval/issues"
+Documentation = "https://anujmahajan.com/products/prompteval"
+"Worked example" = "https://anujmahajan.com/blog/is-the-cheaper-model-good-enough"
 
 [project.scripts]
 prompteval = "prompteval.cli:main"
